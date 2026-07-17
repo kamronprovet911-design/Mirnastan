@@ -1,7 +1,7 @@
 import sqlite3
 import os
 from flask import Flask, g, render_template, request, redirect, url_for, session, flash
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -178,6 +178,32 @@ def index():
     if 'user' in session:
         return redirect(url_for('dashboard'))
     return render_template('index.html')
+
+@app.route('/register', methods=['GET','POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        role = request.form.get('role', 'peasant')
+        if not username or not password:
+            flash('Введите логин и пароль')
+            return redirect(url_for('register'))
+        if get_user(username):
+            flash('Пользователь с таким логином уже существует')
+            return redirect(url_for('register'))
+        password_hash = generate_password_hash(password)
+        db = get_db()
+        db.execute('INSERT INTO users (username, role, password_hash) VALUES (?,?,?)', (username, role, password_hash))
+        db.commit()
+        flash('Регистрация выполнена. Теперь войдите в систему.')
+        return redirect(url_for('login'))
+    roles = [
+        ('peasant', 'Крестьянин'),
+        ('citizen', 'Житель'),
+        ('merchant', 'Торговец'),
+        ('artisan', 'Ремесленник'),
+    ]
+    return render_template('register.html', roles=roles)
 
 @app.route('/login', methods=['GET','POST'])
 def login():
