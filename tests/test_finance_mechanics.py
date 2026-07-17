@@ -16,9 +16,12 @@ class FinanceMechanicsTests(unittest.TestCase):
         self.conn = sqlite3.connect(self.temp_db.name)
         self.conn.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT UNIQUE, value TEXT)')
         self.conn.execute('CREATE TABLE IF NOT EXISTS kingdoms (id INTEGER PRIMARY KEY, name TEXT UNIQUE, budget REAL DEFAULT 0)')
+        self.conn.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, role TEXT, password_hash TEXT, balance REAL DEFAULT 0)')
         self.conn.execute('CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY, from_user INTEGER, to_kingdom INTEGER, amount REAL, description TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
         self.conn.execute('CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY, kingdom_id INTEGER, report_type TEXT, amount REAL, title TEXT, description TEXT, author_name TEXT, recipient_name TEXT, nickname TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, posted INTEGER DEFAULT 0)')
         self.conn.execute("INSERT INTO settings (key, value) VALUES ('treasury', '10000')")
+        self.conn.execute("INSERT INTO users (username, role, balance) VALUES ('king_nerdia', 'king', 2000)")
+        self.conn.execute("INSERT INTO users (username, role, balance) VALUES ('peasant_ivan', 'peasant', 800)")
         self.conn.execute("INSERT INTO kingdoms (name, budget) VALUES ('Нердия', 5000)")
         self.conn.execute("INSERT INTO kingdoms (name, budget) VALUES ('Астерион', 3000)")
         self.conn.commit()
@@ -33,14 +36,24 @@ class FinanceMechanicsTests(unittest.TestCase):
         self.assertTrue(app_module.role_can_manage_money('graf'))
         self.assertFalse(app_module.role_can_manage_money('user'))
 
-    def test_people_expense_reduces_treasury_and_records_report(self):
-        app_module.apply_people_expense(self.conn, 1500, 'Покупки для народа')
+    def test_people_expense_uses_user_balance_and_records_report(self):
+        app_module.apply_people_expense(self.conn, 1500, 'Покупки для народа', acting_user={'username': 'king_nerdia', 'role': 'king'})
         self.conn.commit()
         treasury = self.conn.execute("SELECT value FROM settings WHERE key='treasury'").fetchone()[0]
+        balance = self.conn.execute("SELECT balance FROM users WHERE username='king_nerdia'").fetchone()[0]
         report = self.conn.execute("SELECT report_type, amount, title, description FROM reports ORDER BY id DESC LIMIT 1").fetchone()
-        self.assertEqual(float(treasury), 8500.0)
+        self.assertEqual(float(treasury), 10000.0)
+        self.assertEqual(float(balance), 500.0)
         self.assertEqual(report[0], 'Расход на народ')
         self.assertEqual(report[1], -1500.0)
+
+    def test_peasant_spending_uses_their_own_balance(self):
+        app_module.apply_people_expense(self.conn, 400, 'Корм для жителей', acting_user={'username': 'peasant_ivan', 'role': 'peasant'})
+        self.conn.commit()
+        treasury = self.conn.execute("SELECT value FROM settings WHERE key='treasury'").fetchone()[0]
+        balance = self.conn.execute("SELECT balance FROM users WHERE username='peasant_ivan'").fetchone()[0]
+        self.assertEqual(float(treasury), 10000.0)
+        self.assertEqual(float(balance), 400.0)
 
     def test_transfer_between_kingdoms_updates_balances(self):
         app_module.apply_transfer_between_kingdoms(self.conn, 1, 2, 1200, 'Перевод для нужд')

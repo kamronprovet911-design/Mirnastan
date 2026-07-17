@@ -15,6 +15,13 @@ def get_db():
     if db is None:
         db = g._database = sqlite3.connect(DB_PATH)
         db.row_factory = sqlite3.Row
+    try:
+        columns = [row[1] for row in db.execute('PRAGMA table_info(users)')]
+        if 'balance' not in columns:
+            db.execute('ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0')
+            db.commit()
+    except Exception:
+        pass
     return db
 
 @app.teardown_appcontext
@@ -34,7 +41,7 @@ def get_user(username):
 
 
 def role_can_manage_money(role):
-    return (role or '').lower() in {'emperor', 'king', 'graf'}
+    return (role or '').lower() in {'emperor', 'king', 'graf', 'peasant', 'citizen', 'merchant', 'artisan'}
 
 
 def get_user_kingdom_name(user):
@@ -62,22 +69,52 @@ def user_can_manage_kingdom(user, kingdom_id):
     return kingdom is not None and kingdom['name'] == kingdom_name
 
 
-def apply_people_expense(db, amount, description=''):
+def get_user_balance(db, username):
+    if not username:
+        return 0.0
+    row = db.execute("SELECT balance FROM users WHERE username=?", (username,)).fetchone()
+    if row and row[0] is not None:
+        try:
+            return float(row[0])
+        except (TypeError, ValueError):
+            return 0.0
+    return 0.0
+
+
+def apply_people_expense(db, amount, description='', acting_user=None):
     amount = float(amount)
     if amount <= 0:
         return False
-    treasury_row = db.execute("SELECT value FROM settings WHERE key='treasury'").fetchone()
-    treasury = float(treasury_row[0]) if treasury_row and treasury_row[0] is not None else 0.0
-    if treasury < amount:
-        return False
-    db.execute("UPDATE settings SET value = CAST(value AS REAL) - ? WHERE key='treasury'", (amount,))
+    acting_user = acting_user or {}
+    role = (acting_user or {}).get('role', '').lower()
+    username = (acting_user or {}).get('username')
+
+    if role == 'emperor' or not username:
+        treasury_row = db.execute("SELECT value FROM settings WHERE key='treasury'").fetchone()
+        treasury = float(treasury_row[0]) if treasury_row and treasury_row[0] is not None else 0.0
+        if treasury < amount:
+            return False
+        db.execute("UPDATE settings SET value = CAST(value AS REAL) - ? WHERE key='treasury'", (amount,))
+        from_user_id = None
+        author_name = 'Император'
+        nickname = 'Казна Императора'
+    else:
+        balance = get_user_balance(db, username)
+        if balance < amount:
+            return False
+        db.execute("UPDATE users SET balance = balance - ? WHERE username=?", (amount, username))
+        user_row = db.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+        from_user_id = user_row[0] if user_row else None
+        author_name = username or 'Игрок'
+        nickname = username or 'Личный баланс'
+
     db.execute("INSERT INTO reports (kingdom_id, report_type, amount, title, description, author_name, recipient_name, nickname) VALUES (?,?,?,?,?,?,?,?)",
-               (None, 'Расход на народ', -amount, 'Трата на народ', f'Средства направлены на нужды населения | {description or "обеспечение благосостояния"}', 'Император', 'Народ', 'Казна Императора'))
-    db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)', (None, None, -amount, description or 'Расход на народ'))
+               (None, 'Расход на народ', -amount, 'Трата на народ', f'Средства направлены на нужды населения | {description or "обеспечение благосостояния"}', author_name, 'Народ', nickname))
+    db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)', (from_user_id, None, -amount, description or 'Расход на народ'))
     return True
 
 
-def apply_transfer_between_kingdoms(db, from_kingdom_id, to_kingdom_id, amount, description=''):
+def apply_transfer_between_kingdoms(db, from_kingdom_id, to_kingdom_id, amount, description='', acting_user=None):
     amount = float(amount)
     if amount <= 0:
         return False
@@ -85,14 +122,28 @@ def apply_transfer_between_kingdoms(db, from_kingdom_id, to_kingdom_id, amount, 
     to_kingdom = db.execute('SELECT * FROM kingdoms WHERE id=?', (to_kingdom_id,)).fetchone()
     if not from_kingdom or not to_kingdom:
         return False
-    from_budget = float(from_kingdom[2]) if len(from_kingdom) > 2 else float(from_kingdom[1])
-    to_budget = float(to_kingdom[2]) if len(to_kingdom) > 2 else float(to_kingdom[1])
-    if from_budget < amount:
-        return False
+    acting_user = acting_user or {}
+    role = (acting_user or {}).get('role', '').lower()
+    username = (acting_user or {}).get('username')
+
+    if role == 'emperor' or not username:
+        from_budget = float(from_kingdom[2]) if len(from_kingdom) > 2 else float(from_kingdom[1])
+        if from_budget < amount:
+            return False
+        author_name = 'Император'
+        nickname = 'Казна Императора'
+    else:
+        balance = get_user_balance(db, username)
+        if balance < amount:
+            return False
+        db.execute("UPDATE users SET balance = balance - ? WHERE username=?", (amount, username))
+        author_name = username or 'Игрок'
+        nickname = username or 'Личный баланс'
+
     db.execute('UPDATE kingdoms SET budget = budget - ? WHERE id=?', (amount, from_kingdom_id))
     db.execute('UPDATE kingdoms SET budget = budget + ? WHERE id=?', (amount, to_kingdom_id))
     db.execute('INSERT INTO reports (kingdom_id, report_type, amount, title, description, author_name, recipient_name, nickname) VALUES (?,?,?,?,?,?,?,?)',
-               (to_kingdom_id, 'Перевод', amount, 'Перевод между королевствами', f'Переведено {amount} | {description or "перераспределение ресурсов"}', 'Император', to_kingdom[1], 'Казна Императора'))
+               (to_kingdom_id, 'Перевод', amount, 'Перевод между королевствами', f'Переведено {amount} | {description or "перераспределение ресурсов"}', author_name, to_kingdom[1], nickname))
     db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)', (None, to_kingdom_id, amount, description or 'Перевод между королевствами'))
     return True
 
@@ -212,7 +263,7 @@ def login():
         password = request.form['password']
         user = get_user(username)
         if user and check_password_hash(user['password_hash'], password):
-            session['user'] = dict(username=user['username'], role=user['role'])
+            session['user'] = dict(username=user['username'], role=user['role'], balance=user.get('balance', 0))
             return redirect(url_for('dashboard'))
         flash('Неверные учётные данные')
     return render_template('login.html')
@@ -295,8 +346,9 @@ def people_expense():
     amount = float(request.form.get('amount', 0) or 0)
     description = request.form.get('description', '')
     db = get_db()
-    if apply_people_expense(db, amount, description):
+    if apply_people_expense(db, amount, description, acting_user=user):
         db.commit()
+        session['user']['balance'] = get_user_balance(db, user['username']) if user['username'] else 0
         send_report_to_telegram()
         flash('Средства направлены на народ')
     else:
@@ -319,8 +371,9 @@ def transfer_between_kingdoms():
     amount = float(request.form.get('amount', 0) or 0)
     description = request.form.get('description', '')
     db = get_db()
-    if apply_transfer_between_kingdoms(db, from_kingdom_id, to_kingdom_id, amount, description):
+    if apply_transfer_between_kingdoms(db, from_kingdom_id, to_kingdom_id, amount, description, acting_user=user):
         db.commit()
+        session['user']['balance'] = get_user_balance(db, user['username']) if user['username'] else 0
         send_report_to_telegram()
         flash('Перевод выполнен')
     else:
