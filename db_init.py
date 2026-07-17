@@ -65,21 +65,24 @@ def init_db():
     ensure_column(conn, 'reports', 'nickname', 'TEXT')
     conn.commit()
 
-    # Seed kingdoms
-    kingdoms = ['Нердия','Астерион','Мирноуль']
-    for k in kingdoms:
+    # Seed kingdoms with starting budgets
+    kingdoms = [
+        ('Нердия', 1004000000.0),
+        ('Астерион', 500000000.0),
+        ('Мирноуль', 20000000.0),
+    ]
+    for k, budget in kingdoms:
         try:
-            c.execute('INSERT INTO kingdoms (name, budget) VALUES (?,?)', (k, 0.0))
+            c.execute('INSERT INTO kingdoms (name, budget) VALUES (?,?)', (k, budget))
         except Exception:
             pass
-    c.execute('UPDATE kingdoms SET budget = 0')
 
     # Seed imperial treasury
     existing_treasury = c.execute("SELECT value FROM settings WHERE key='treasury'").fetchone()
     if existing_treasury is None:
-        c.execute("INSERT INTO settings (key, value) VALUES ('treasury', '890000000000')")
+        c.execute("INSERT INTO settings (key, value) VALUES ('treasury', '200000000000')")
     else:
-        c.execute("UPDATE settings SET value='890000000000' WHERE key='treasury'")
+        c.execute("UPDATE settings SET value='200000000000' WHERE key='treasury'")
 
     # Seed users
     users = [

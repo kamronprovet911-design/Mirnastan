@@ -153,7 +153,7 @@ def get_treasury():
             return float(row['value'])
         except (TypeError, ValueError):
             pass
-    return 890000000000.0
+    return 200000000000.0
 
 
 def send_report_to_telegram():
