@@ -39,16 +39,39 @@ class FinanceMechanicsTests(unittest.TestCase):
         self.assertTrue(app_module.role_can_manage_money('graf'))
         self.assertFalse(app_module.role_can_manage_money('user'))
 
-    def test_people_expense_uses_user_balance_and_records_report(self):
-        app_module.apply_people_expense(self.conn, 1500, 'Покупки для народа', acting_user={'username': 'king_nerdia', 'role': 'king'})
+    def test_king_people_expense_uses_kingdom_budget_and_records_report(self):
+        ok = app_module.apply_people_expense(self.conn, 3000, 'Покупки для народа', acting_user={'username': 'king_nerdia', 'role': 'king'})
         self.conn.commit()
         treasury = self.conn.execute("SELECT value FROM settings WHERE key='treasury'").fetchone()[0]
         balance = self.conn.execute("SELECT balance FROM users WHERE username='king_nerdia'").fetchone()[0]
-        report = self.conn.execute("SELECT report_type, amount, title, description FROM reports ORDER BY id DESC LIMIT 1").fetchone()
+        kingdom_budget = self.conn.execute("SELECT budget FROM kingdoms WHERE name='Нердия'").fetchone()[0]
+        report = self.conn.execute("SELECT kingdom_id, report_type, amount, title, description, author_name, nickname FROM reports ORDER BY id DESC LIMIT 1").fetchone()
+        self.assertTrue(ok)
         self.assertEqual(float(treasury), 10000.0)
-        self.assertEqual(float(balance), 500.0)
-        self.assertEqual(report[0], 'Расход на народ')
-        self.assertEqual(report[1], -1500.0)
+        self.assertEqual(float(balance), 2000.0)
+        self.assertEqual(float(kingdom_budget), 2000.0)
+        self.assertEqual(report[0], 1)
+        self.assertEqual(report[1], 'Расход на народ')
+        self.assertEqual(report[2], -3000.0)
+        self.assertEqual(report[5], 'Король Нердия')
+        self.assertEqual(report[6], 'Казна Нердия')
+
+    def test_graf_people_expense_uses_kingdom_budget(self):
+        self.conn.execute("INSERT INTO users (username, role, balance) VALUES ('graf_nerdia_1', 'graf', 100)")
+        self.conn.commit()
+
+        ok = app_module.apply_people_expense(self.conn, 1000, 'Помощь жителям', acting_user={'username': 'graf_nerdia_1', 'role': 'graf'})
+        self.conn.commit()
+
+        balance = self.conn.execute("SELECT balance FROM users WHERE username='graf_nerdia_1'").fetchone()[0]
+        kingdom_budget = self.conn.execute("SELECT budget FROM kingdoms WHERE name='Нердия'").fetchone()[0]
+        report = self.conn.execute("SELECT author_name, nickname FROM reports ORDER BY id DESC LIMIT 1").fetchone()
+
+        self.assertTrue(ok)
+        self.assertEqual(float(balance), 100.0)
+        self.assertEqual(float(kingdom_budget), 4000.0)
+        self.assertEqual(report[0], 'Граф Нердия')
+        self.assertEqual(report[1], 'Казна Нердия')
 
     def test_peasant_spending_uses_their_own_balance(self):
         app_module.apply_people_expense(self.conn, 400, 'Корм для жителей', acting_user={'username': 'peasant_ivan', 'role': 'peasant'})

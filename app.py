@@ -197,6 +197,13 @@ def get_user_balance(db, username):
     return 0.0
 
 
+def get_user_kingdom(db, user):
+    kingdom_name = get_user_kingdom_name(user)
+    if not kingdom_name:
+        return None
+    return db.execute('SELECT * FROM kingdoms WHERE name=?', (kingdom_name,)).fetchone()
+
+
 def apply_people_expense(db, amount, description='', acting_user=None):
     amount = float(amount)
     if amount <= 0:
@@ -204,6 +211,7 @@ def apply_people_expense(db, amount, description='', acting_user=None):
     acting_user = acting_user or {}
     role = (acting_user or {}).get('role', '').lower()
     username = (acting_user or {}).get('username')
+    report_kingdom_id = None
 
     if role == 'emperor' or not username:
         treasury_row = db.execute("SELECT value FROM settings WHERE key='treasury'").fetchone()
@@ -214,6 +222,18 @@ def apply_people_expense(db, amount, description='', acting_user=None):
         from_user_id = None
         author_name = 'Император'
         nickname = 'Казна Императора'
+    elif role in AUTHORITY_ROLES:
+        kingdom = get_user_kingdom(db, acting_user)
+        if not kingdom:
+            return False
+        if float(kingdom['budget'] or 0) < amount:
+            return False
+        db.execute('UPDATE kingdoms SET budget = budget - ? WHERE id=?', (amount, kingdom['id']))
+        from_user_id = None
+        report_kingdom_id = kingdom['id']
+        title = 'Король' if role == 'king' else 'Граф'
+        author_name = f'{title} {kingdom["name"]}'
+        nickname = f'Казна {kingdom["name"]}'
     else:
         balance = get_user_balance(db, username)
         if balance < amount:
@@ -225,8 +245,8 @@ def apply_people_expense(db, amount, description='', acting_user=None):
         nickname = username or 'Личный баланс'
 
     db.execute("INSERT INTO reports (kingdom_id, report_type, amount, title, description, author_name, recipient_name, nickname) VALUES (?,?,?,?,?,?,?,?)",
-               (None, 'Расход на народ', -amount, 'Трата на народ', f'Средства направлены на нужды населения | {description or "обеспечение благосостояния"}', author_name, 'Народ', nickname))
-    db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)', (from_user_id, None, -amount, description or 'Расход на народ'))
+               (report_kingdom_id, 'Расход на народ', -amount, 'Трата на народ', f'Средства направлены на нужды населения | {description or "обеспечение благосостояния"}', author_name, 'Народ', nickname))
+    db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)', (from_user_id, report_kingdom_id, -amount, description or 'Расход на народ'))
     return True
 
 
