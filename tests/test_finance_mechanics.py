@@ -143,6 +143,44 @@ class FinanceMechanicsTests(unittest.TestCase):
         self.assertEqual(float(user_income), 75.0)
         self.assertEqual(float(kingdom_income), 250.0)
 
+    def test_register_and_login_create_schema_on_empty_database(self):
+        empty_db = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
+        empty_db_path = empty_db.name
+        empty_db.close()
+        os.unlink(empty_db_path)
+        previous_db_path = app_module.DB_PATH
+        app_module.DB_PATH = empty_db_path
+        app_module.app.config['TESTING'] = True
+        try:
+            with app_module.app.test_client() as client:
+                register_response = client.post('/register', data={
+                    'username': 'render_user',
+                    'password': 'render_pass',
+                    'role': 'peasant',
+                })
+                login_response = client.post('/login', data={
+                    'username': 'render_user',
+                    'password': 'render_pass',
+                })
+
+            conn = sqlite3.connect(empty_db_path)
+            try:
+                user_count = conn.execute("SELECT COUNT(*) FROM users WHERE username='render_user'").fetchone()[0]
+                emperor_count = conn.execute("SELECT COUNT(*) FROM users WHERE username='emperor'").fetchone()[0]
+                kingdom_count = conn.execute('SELECT COUNT(*) FROM kingdoms').fetchone()[0]
+            finally:
+                conn.close()
+
+            self.assertEqual(register_response.status_code, 302)
+            self.assertEqual(login_response.status_code, 302)
+            self.assertEqual(user_count, 1)
+            self.assertEqual(emperor_count, 1)
+            self.assertGreaterEqual(kingdom_count, 3)
+        finally:
+            app_module.DB_PATH = previous_db_path
+            if os.path.exists(empty_db_path):
+                os.unlink(empty_db_path)
+
 
 if __name__ == '__main__':
     unittest.main()

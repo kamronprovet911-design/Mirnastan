@@ -18,6 +18,21 @@ APP_TIMEZONE = os.getenv('APP_TIMEZONE') or os.getenv('TZ')
 DAILY_INCOME_HOUR = 0
 DAILY_INCOME_MINUTE = 1
 DAILY_INCOME_LAST_DATE_KEY = 'daily_income_last_date'
+DEFAULT_TREASURY = 200000000000.0
+DEFAULT_KINGDOMS = [
+    ('Нердия', 1004000000.0),
+    ('Астерион', 500000000.0),
+    ('Мирноуль', 20000000.0),
+]
+DEFAULT_USERS = [
+    ('emperor', 'emperor'),
+    ('king_nerdia', 'king'),
+    ('king_asterion', 'king'),
+    ('king_mirnoul', 'king'),
+    ('graf_nerdia_1', 'graf'),
+    ('graf_asterion_1', 'graf'),
+    ('graf_mirnoul_1', 'graf'),
+]
 
 
 def get_current_time():
@@ -40,23 +55,80 @@ def ensure_column(db, table_name, column_name, definition):
 
 
 def ensure_setting(db, key, value):
-    try:
-        row = db.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
-        if row is None:
-            db.execute('INSERT INTO settings (key, value) VALUES (?,?)', (key, str(value)))
-    except sqlite3.Error:
-        pass
+    row = db.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
+    if row is None:
+        db.execute('INSERT INTO settings (key, value) VALUES (?,?)', (key, str(value)))
+
+
+def ensure_runtime_tables(db):
+    db.execute('''CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY,
+        username TEXT UNIQUE,
+        role TEXT,
+        password_hash TEXT,
+        balance REAL DEFAULT 0,
+        daily_income REAL DEFAULT 0
+    )''')
+    db.execute('''CREATE TABLE IF NOT EXISTS kingdoms (
+        id INTEGER PRIMARY KEY,
+        name TEXT UNIQUE,
+        budget REAL DEFAULT 0,
+        daily_income REAL DEFAULT 0
+    )''')
+    db.execute('''CREATE TABLE IF NOT EXISTS settings (
+        id INTEGER PRIMARY KEY,
+        key TEXT UNIQUE,
+        value TEXT
+    )''')
+    db.execute('''CREATE TABLE IF NOT EXISTS transactions (
+        id INTEGER PRIMARY KEY,
+        from_user INTEGER,
+        to_kingdom INTEGER,
+        amount REAL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    db.execute('''CREATE TABLE IF NOT EXISTS reports (
+        id INTEGER PRIMARY KEY,
+        kingdom_id INTEGER,
+        report_type TEXT,
+        amount REAL,
+        title TEXT,
+        description TEXT,
+        author_name TEXT,
+        recipient_name TEXT,
+        nickname TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        posted INTEGER DEFAULT 0
+    )''')
+
+
+def seed_runtime_defaults(db):
+    for name, budget in DEFAULT_KINGDOMS:
+        db.execute('INSERT OR IGNORE INTO kingdoms (name, budget) VALUES (?,?)', (name, budget))
+    ensure_setting(db, 'treasury', str(DEFAULT_TREASURY))
+    ensure_setting(db, DAILY_INCOME_LAST_DATE_KEY, '')
+    for username, role in DEFAULT_USERS:
+        existing = db.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone()
+        if existing is None:
+            db.execute(
+                'INSERT INTO users (username, role, password_hash) VALUES (?,?,?)',
+                (username, role, generate_password_hash(f'{username}_pass')),
+            )
 
 
 def ensure_runtime_schema(db):
-    try:
-        ensure_column(db, 'users', 'balance', 'REAL DEFAULT 0')
-        ensure_column(db, 'users', 'daily_income', 'REAL DEFAULT 0')
-        ensure_column(db, 'kingdoms', 'daily_income', 'REAL DEFAULT 0')
-        ensure_setting(db, DAILY_INCOME_LAST_DATE_KEY, '')
-        db.commit()
-    except Exception:
-        pass
+    ensure_runtime_tables(db)
+    ensure_column(db, 'users', 'balance', 'REAL DEFAULT 0')
+    ensure_column(db, 'users', 'daily_income', 'REAL DEFAULT 0')
+    ensure_column(db, 'kingdoms', 'daily_income', 'REAL DEFAULT 0')
+    ensure_column(db, 'reports', 'report_type', 'TEXT')
+    ensure_column(db, 'reports', 'title', 'TEXT')
+    ensure_column(db, 'reports', 'author_name', 'TEXT')
+    ensure_column(db, 'reports', 'recipient_name', 'TEXT')
+    ensure_column(db, 'reports', 'nickname', 'TEXT')
+    seed_runtime_defaults(db)
+    db.commit()
 
 
 def get_db():
@@ -247,7 +319,7 @@ def get_treasury():
             return float(row['value'])
         except (TypeError, ValueError):
             pass
-    return 200000000000.0
+    return DEFAULT_TREASURY
 
 
 def send_report_to_telegram():
@@ -279,7 +351,7 @@ def set_setting(db, key, value):
 
 
 def get_treasury_from_db(db):
-    return get_setting_float(db, 'treasury', 200000000000.0)
+    return get_setting_float(db, 'treasury', DEFAULT_TREASURY)
 
 
 def parse_money_amount(value):
@@ -460,7 +532,7 @@ def login():
         password = request.form['password']
         user = get_user(username)
         if user and check_password_hash(user['password_hash'], password):
-            session['user'] = dict(username=user['username'], role=user['role'], balance=user.get('balance', 0))
+            session['user'] = dict(username=user['username'], role=user['role'], balance=user['balance'] or 0)
             return redirect(url_for('dashboard'))
         flash('Неверные учётные данные')
     return render_template('login.html')
