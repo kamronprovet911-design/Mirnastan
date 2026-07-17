@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card p-4">
+  <h3 class="mb-3">Архив отчётов</h3>
+  <div class="row g-3">
+    {% for r in reports %}
+    <div class="col-md-6">
+      <div class="card p-3" style="background: rgba(255,255,255,.06);">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <strong>{{ r.kingdom_name }}</strong>
+          <span class="badge bg-warning text-dark">{{ r.report_type }}</span>
+        </div>
+        <h6>{{ r.title or 'Без заголовка' }}</h6>
+        <p class="mb-1"><strong>От кого:</strong> {{ r.author_name or '-' }}</p>
+        <p class="mb-1"><strong>Кому:</strong> {{ r.recipient_name or '-' }}</p>
+        <p class="mb-1"><strong>Сумма:</strong> {{ r.amount }}</p>
+        <p class="mb-1"><strong>Подробности:</strong> {{ r.description }}</p>
+        <small class="text-muted">{{ r.created_at }} · Telegram: {{ 'Да' if r.posted else 'Нет' }}</small>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

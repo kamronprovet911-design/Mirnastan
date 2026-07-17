@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card p-4" style="color: black;">
+      <h3 class="mb-3" style="color: black;">Бюджеты королевств</h3>
+      <table class="table" style="color: black;">
+        <thead><tr><th>Королевство</th><th>Баланс</th><th>Операции</th></tr></thead>
+        <tbody>
+          {% for k in kingdoms %}
+          <tr>
+            <td>{{ k.name }}</td>
+            <td>{{ k.budget }}</td>
+            <td>
+              {% if session.user.role=='emperor' %}
+              <div class="d-flex gap-2 flex-wrap">
+                <form class="d-flex gap-2" method="post" action="/allocate">
+                  <input type="hidden" name="kingdom_id" value="{{ k.id }}">
+                  <input name="amount" placeholder="+ сумма" class="form-control form-control-sm" style="max-width:100px;">
+                  <input name="description" placeholder="Причина" class="form-control form-control-sm" style="max-width:160px;">
+                  <button class="btn btn-sm btn-gold">+ Выделить</button>
+                </form>
+                <form class="d-flex gap-2" method="post" action="/withdraw">
+                  <input type="hidden" name="kingdom_id" value="{{ k.id }}">
+                  <input name="amount" placeholder="- сумма" class="form-control form-control-sm" style="max-width:100px;">
+                  <input name="description" placeholder="Причина" class="form-control form-control-sm" style="max-width:160px;">
+                  <button class="btn btn-sm btn-outline-dark">- Списать</button>
+                </form>
+              </div>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card p-4" style="color: black;">
+      <h4 style="color: black;">Панель</h4>
+      <p style="color: black;"><strong>Пользователь:</strong> {{ session.user.username }}</p>
+      <p style="color: black;"><strong>Роль:</strong> {{ session.user.role }}</p>
+      <p style="color: black;"><strong>Казна Императора:</strong> {{ treasury }}</p>
+      <p class="text-dark">Раздача бюджетов, расходы на народ и переводы между королевствами.</p>
+      {% if session.user.role in ['emperor','king','graf'] %}
+      <form method="post" action="/people_expense" class="mt-2">
+        <div class="input-group mb-2">
+          <input name="amount" type="number" class="form-control" placeholder="Трата на народ">
+          <button class="btn btn-outline-success">На народ</button>
+        </div>
+        <input name="description" class="form-control form-control-sm mb-2" placeholder="Причина: хлеб, медицина, дороги">
+      </form>
+      <form method="post" action="/transfer_between_kingdoms" class="mt-2">
+        <div class="row g-2">
+          <div class="col-6">
+            <select name="from_kingdom_id" class="form-select form-select-sm">
+              {% for k in kingdoms %}
+              <option value="{{ k.id }}">{{ k.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6">
+            <select name="to_kingdom_id" class="form-select form-select-sm">
+              {% for k in kingdoms %}
+              <option value="{{ k.id }}">{{ k.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6">
+            <input name="amount" type="number" class="form-control form-control-sm" placeholder="Сумма">
+          </div>
+          <div class="col-6">
+            <input name="description" class="form-control form-control-sm" placeholder="Причина">
+          </div>
+          <div class="col-12">
+            <button class="btn btn-outline-info btn-sm w-100">Перевести</button>
+          </div>
+        </div>
+      </form>
+      {% endif %}
+      <a class="btn btn-gold w-100 mt-3" href="/submit_report">Отправить новый отчёт</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
