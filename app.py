@@ -1,5 +1,9 @@
 import sqlite3
 import os
+import threading
+import time
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Flask, g, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import check_password_hash, generate_password_hash
 from dotenv import load_dotenv
@@ -10,18 +14,57 @@ DB_PATH = os.getenv('DATABASE', 'budget.db')
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET', 'dev-secret')
 
+APP_TIMEZONE = os.getenv('APP_TIMEZONE') or os.getenv('TZ')
+DAILY_INCOME_HOUR = 0
+DAILY_INCOME_MINUTE = 1
+DAILY_INCOME_LAST_DATE_KEY = 'daily_income_last_date'
+
+
+def get_current_time():
+    if APP_TIMEZONE:
+        try:
+            return datetime.now(ZoneInfo(APP_TIMEZONE))
+        except ZoneInfoNotFoundError:
+            pass
+    return datetime.now()
+
+
+def get_table_columns(db, table_name):
+    return [row[1] for row in db.execute(f'PRAGMA table_info({table_name})')]
+
+
+def ensure_column(db, table_name, column_name, definition):
+    columns = get_table_columns(db, table_name)
+    if columns and column_name not in columns:
+        db.execute(f'ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}')
+
+
+def ensure_setting(db, key, value):
+    try:
+        row = db.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
+        if row is None:
+            db.execute('INSERT INTO settings (key, value) VALUES (?,?)', (key, str(value)))
+    except sqlite3.Error:
+        pass
+
+
+def ensure_runtime_schema(db):
+    try:
+        ensure_column(db, 'users', 'balance', 'REAL DEFAULT 0')
+        ensure_column(db, 'users', 'daily_income', 'REAL DEFAULT 0')
+        ensure_column(db, 'kingdoms', 'daily_income', 'REAL DEFAULT 0')
+        ensure_setting(db, DAILY_INCOME_LAST_DATE_KEY, '')
+        db.commit()
+    except Exception:
+        pass
+
+
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
         db = g._database = sqlite3.connect(DB_PATH)
         db.row_factory = sqlite3.Row
-    try:
-        columns = [row[1] for row in db.execute('PRAGMA table_info(users)')]
-        if 'balance' not in columns:
-            db.execute('ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0')
-            db.commit()
-    except Exception:
-        pass
+    ensure_runtime_schema(db)
     return db
 
 @app.teardown_appcontext
@@ -215,6 +258,160 @@ def send_report_to_telegram():
         print('Telegram send failed:', exc)
 
 
+def get_setting_value(db, key, default=''):
+    row = db.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
+    if row and row[0] is not None:
+        return row[0]
+    return default
+
+
+def get_setting_float(db, key, default=0.0):
+    try:
+        return float(get_setting_value(db, key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def set_setting(db, key, value):
+    cur = db.execute('UPDATE settings SET value=? WHERE key=?', (str(value), key))
+    if cur.rowcount == 0:
+        db.execute('INSERT INTO settings (key, value) VALUES (?,?)', (key, str(value)))
+
+
+def get_treasury_from_db(db):
+    return get_setting_float(db, 'treasury', 200000000000.0)
+
+
+def parse_money_amount(value):
+    try:
+        amount = float(value or 0)
+    except (TypeError, ValueError):
+        return None
+    if amount < 0:
+        return None
+    return amount
+
+
+def set_user_daily_income(db, user_id, amount):
+    amount = parse_money_amount(amount)
+    if amount is None:
+        return False
+    user = db.execute('SELECT id FROM users WHERE id=?', (user_id,)).fetchone()
+    if not user:
+        return False
+    db.execute('UPDATE users SET daily_income=? WHERE id=?', (amount, user_id))
+    return True
+
+
+def set_kingdom_daily_income(db, kingdom_id, amount):
+    amount = parse_money_amount(amount)
+    if amount is None:
+        return False
+    kingdom = db.execute('SELECT id FROM kingdoms WHERE id=?', (kingdom_id,)).fetchone()
+    if not kingdom:
+        return False
+    db.execute('UPDATE kingdoms SET daily_income=? WHERE id=?', (amount, kingdom_id))
+    return True
+
+
+def apply_bulk_income(db, user_amount=0, kingdom_amount=0, description=''):
+    user_amount = parse_money_amount(user_amount)
+    kingdom_amount = parse_money_amount(kingdom_amount)
+    if user_amount is None or kingdom_amount is None:
+        return False
+    users = db.execute("SELECT id, username FROM users WHERE role != 'emperor'").fetchall()
+    kingdoms = db.execute('SELECT id, name FROM kingdoms').fetchall()
+    total = (user_amount * len(users)) + (kingdom_amount * len(kingdoms))
+    if total <= 0:
+        return False
+    if get_treasury_from_db(db) < total:
+        return False
+    db.execute("UPDATE settings SET value = CAST(value AS REAL) - ? WHERE key='treasury'", (total,))
+    if user_amount > 0:
+        db.execute("UPDATE users SET balance = balance + ? WHERE role != 'emperor'", (user_amount,))
+    if kingdom_amount > 0:
+        db.execute('UPDATE kingdoms SET budget = budget + ?', (kingdom_amount,))
+        for kingdom in kingdoms:
+            db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)',
+                       (None, kingdom['id'], kingdom_amount, description or 'Ежедневный доход королевству'))
+    db.execute("INSERT INTO reports (kingdom_id, report_type, amount, title, description, author_name, recipient_name, nickname) VALUES (?,?,?,?,?,?,?,?)",
+               (None, 'Ежедневный доход', total, 'Ежедневный доход', f'Игрокам: {user_amount}, королевствам: {kingdom_amount} | {description or "выплата дохода"}', 'Император', 'Игроки и королевства', 'Казна Императора'))
+    db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)',
+               (None, None, total, description or 'Ежедневный доход'))
+    return True
+
+
+def apply_daily_income(db, amount, description=''):
+    return apply_bulk_income(db, amount, 0, description)
+
+
+def is_daily_income_time(now):
+    return now.hour == DAILY_INCOME_HOUR and now.minute == DAILY_INCOME_MINUTE
+
+
+def get_configured_income_recipients(db):
+    users = db.execute("SELECT id, username, daily_income FROM users WHERE role != 'emperor' AND COALESCE(daily_income, 0) > 0").fetchall()
+    kingdoms = db.execute('SELECT id, name, daily_income FROM kingdoms WHERE COALESCE(daily_income, 0) > 0').fetchall()
+    return users, kingdoms
+
+
+def apply_configured_daily_income(db, run_date, description=''):
+    if get_setting_value(db, DAILY_INCOME_LAST_DATE_KEY, '') == run_date:
+        return False
+    users, kingdoms = get_configured_income_recipients(db)
+    user_total = sum(float(user['daily_income'] or 0) for user in users)
+    kingdom_total = sum(float(kingdom['daily_income'] or 0) for kingdom in kingdoms)
+    total = user_total + kingdom_total
+    if total <= 0:
+        return False
+    if get_treasury_from_db(db) < total:
+        return False
+
+    db.execute("UPDATE settings SET value = CAST(value AS REAL) - ? WHERE key='treasury'", (total,))
+    for user in users:
+        db.execute('UPDATE users SET balance = balance + ? WHERE id=?', (float(user['daily_income']), user['id']))
+    for kingdom in kingdoms:
+        kingdom_amount = float(kingdom['daily_income'])
+        db.execute('UPDATE kingdoms SET budget = budget + ? WHERE id=?', (kingdom_amount, kingdom['id']))
+        db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)',
+                   (None, kingdom['id'], kingdom_amount, description or 'Ежедневный доход королевству'))
+    db.execute("INSERT INTO reports (kingdom_id, report_type, amount, title, description, author_name, recipient_name, nickname) VALUES (?,?,?,?,?,?,?,?)",
+               (None, 'Ежедневный доход', total, 'Ежедневный доход', f'Игрокам: {user_total}, королевствам: {kingdom_total} | {description or "автоматическая выплата в 00:01"}', 'Император', 'Игроки и королевства', 'Казна Императора'))
+    db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)',
+               (None, None, total, description or 'Ежедневный доход'))
+    set_setting(db, DAILY_INCOME_LAST_DATE_KEY, run_date)
+    return True
+
+
+def distribute_daily_income(now=None):
+    now = now or get_current_time()
+    if not is_daily_income_time(now):
+        return False
+    db = sqlite3.connect(DB_PATH)
+    db.row_factory = sqlite3.Row
+    try:
+        ensure_runtime_schema(db)
+        paid = apply_configured_daily_income(db, now.date().isoformat(), 'автоматическая выплата в 00:01')
+        if paid:
+            db.commit()
+            send_report_to_telegram()
+        return paid
+    finally:
+        db.close()
+
+
+def run_daily_income_loop():
+    while True:
+        try:
+            distribute_daily_income()
+        except Exception as exc:
+            print('Daily income loop error:', exc)
+        time.sleep(60)
+
+
+threading.Thread(target=run_daily_income_loop, daemon=True).start()
+
+
 def login_required(f):
     from functools import wraps
     @wraps(f)
@@ -278,9 +475,10 @@ def logout():
 def dashboard():
     db = get_db()
     kingdoms = query_db('SELECT * FROM kingdoms')
-    reports = query_db('SELECT r.*, k.name as kingdom_name FROM reports r JOIN kingdoms k ON r.kingdom_id=k.id ORDER BY r.created_at DESC LIMIT 10')
+    reports = query_db('SELECT r.*, k.name as kingdom_name FROM reports r LEFT JOIN kingdoms k ON r.kingdom_id=k.id ORDER BY r.created_at DESC LIMIT 10')
     treasury = get_treasury()
-    return render_template('dashboard.html', kingdoms=kingdoms, reports=reports, treasury=treasury)
+    users = query_db("SELECT id, username, role, balance, daily_income FROM users WHERE role != 'emperor' ORDER BY role, username")
+    return render_template('dashboard.html', kingdoms=kingdoms, reports=reports, treasury=treasury, users=users)
 
 @app.route('/allocate', methods=['POST'])
 @login_required
@@ -379,6 +577,30 @@ def transfer_between_kingdoms():
     else:
         flash('Невозможно выполнить перевод')
     return redirect(url_for('dashboard'))
+
+@app.route('/daily_income', methods=['POST'])
+@login_required
+def daily_income():
+    user = session['user']
+    if user['role'] != 'emperor':
+        flash('Только император может выдавать доход')
+        return redirect(url_for('dashboard'))
+    target_type = request.form.get('target_type')
+    amount = request.form.get('amount', 0)
+    db = get_db()
+    if target_type == 'user':
+        ok = set_user_daily_income(db, request.form.get('user_id'), amount)
+    elif target_type == 'kingdom':
+        ok = set_kingdom_daily_income(db, request.form.get('kingdom_id'), amount)
+    else:
+        ok = False
+    if ok:
+        db.commit()
+        flash('Ежедневный доход назначен')
+    else:
+        flash('Не удалось назначить ежедневный доход')
+    return redirect(url_for('dashboard'))
+
 
 @app.route('/submit_report', methods=['GET','POST'])
 @login_required

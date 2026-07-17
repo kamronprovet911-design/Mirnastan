@@ -25,12 +25,15 @@ def init_db():
         id INTEGER PRIMARY KEY,
         username TEXT UNIQUE,
         role TEXT,
-        password_hash TEXT
+        password_hash TEXT,
+        balance REAL DEFAULT 0,
+        daily_income REAL DEFAULT 0
     )''')
     c.execute('''CREATE TABLE IF NOT EXISTS kingdoms (
         id INTEGER PRIMARY KEY,
         name TEXT UNIQUE,
-        budget REAL DEFAULT 0
+        budget REAL DEFAULT 0,
+        daily_income REAL DEFAULT 0
     )''')
     c.execute('''CREATE TABLE IF NOT EXISTS settings (
         id INTEGER PRIMARY KEY,
@@ -63,6 +66,9 @@ def init_db():
     ensure_column(conn, 'reports', 'author_name', 'TEXT')
     ensure_column(conn, 'reports', 'recipient_name', 'TEXT')
     ensure_column(conn, 'reports', 'nickname', 'TEXT')
+    ensure_column(conn, 'users', 'balance', 'REAL DEFAULT 0')
+    ensure_column(conn, 'users', 'daily_income', 'REAL DEFAULT 0')
+    ensure_column(conn, 'kingdoms', 'daily_income', 'REAL DEFAULT 0')
     conn.commit()
 
     # Seed kingdoms with starting budgets
@@ -83,6 +89,8 @@ def init_db():
         c.execute("INSERT INTO settings (key, value) VALUES ('treasury', '200000000000')")
     else:
         c.execute("UPDATE settings SET value='200000000000' WHERE key='treasury'")
+    if c.execute("SELECT value FROM settings WHERE key='daily_income_last_date'").fetchone() is None:
+        c.execute("INSERT INTO settings (key, value) VALUES ('daily_income_last_date', '')")
 
     # Seed users
     users = [
