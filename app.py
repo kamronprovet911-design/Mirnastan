@@ -18,6 +18,7 @@ APP_TIMEZONE = os.getenv('APP_TIMEZONE') or os.getenv('TZ')
 DAILY_INCOME_HOUR = 0
 DAILY_INCOME_MINUTE = 1
 DAILY_INCOME_LAST_DATE_KEY = 'daily_income_last_date'
+AUTHORITY_ROLES = ('king', 'graf')
 DEFAULT_TREASURY = 200000000000.0
 DEFAULT_KINGDOMS = [
     ('Нердия', 1004000000.0),
@@ -325,6 +326,7 @@ def get_treasury():
 def send_report_to_telegram():
     try:
         import telegram_bot
+        telegram_bot.DB = DB_PATH
         telegram_bot.process_pending_reports()
     except Exception as exc:
         print('Telegram send failed:', exc)
@@ -386,6 +388,28 @@ def set_kingdom_daily_income(db, kingdom_id, amount):
     return True
 
 
+def role_is_authority(role):
+    return (role or '').lower() in AUTHORITY_ROLES
+
+
+def create_daily_income_assignment_report(db, amount, recipient_name, target_kind, kingdom_id=None):
+    amount = float(amount)
+    action = 'отключен' if amount == 0 else 'назначен'
+    db.execute(
+        'INSERT INTO reports (kingdom_id, report_type, amount, title, description, author_name, recipient_name, nickname) VALUES (?,?,?,?,?,?,?,?)',
+        (
+            kingdom_id,
+            'Назначение дохода',
+            amount,
+            'Настройка ежедневного дохода',
+            f'Ежедневный доход {action}: {target_kind} {recipient_name} | сумма {amount} каждый день в 00:01',
+            'Император',
+            recipient_name,
+            'Казна Императора',
+        ),
+    )
+
+
 def apply_bulk_income(db, user_amount=0, kingdom_amount=0, description=''):
     user_amount = parse_money_amount(user_amount)
     kingdom_amount = parse_money_amount(kingdom_amount)
@@ -422,7 +446,7 @@ def is_daily_income_time(now):
 
 
 def get_configured_income_recipients(db):
-    users = db.execute("SELECT id, username, daily_income FROM users WHERE role != 'emperor' AND COALESCE(daily_income, 0) > 0").fetchall()
+    users = db.execute("SELECT id, username, role, daily_income FROM users WHERE role != 'emperor' AND COALESCE(daily_income, 0) > 0").fetchall()
     kingdoms = db.execute('SELECT id, name, daily_income FROM kingdoms WHERE COALESCE(daily_income, 0) > 0').fetchall()
     return users, kingdoms
 
@@ -431,9 +455,10 @@ def apply_configured_daily_income(db, run_date, description=''):
     if get_setting_value(db, DAILY_INCOME_LAST_DATE_KEY, '') == run_date:
         return False
     users, kingdoms = get_configured_income_recipients(db)
-    user_total = sum(float(user['daily_income'] or 0) for user in users)
+    player_total = sum(float(user['daily_income'] or 0) for user in users if not role_is_authority(user['role']))
+    authority_total = sum(float(user['daily_income'] or 0) for user in users if role_is_authority(user['role']))
     kingdom_total = sum(float(kingdom['daily_income'] or 0) for kingdom in kingdoms)
-    total = user_total + kingdom_total
+    total = player_total + authority_total + kingdom_total
     if total <= 0:
         return False
     if get_treasury_from_db(db) < total:
@@ -447,8 +472,22 @@ def apply_configured_daily_income(db, run_date, description=''):
         db.execute('UPDATE kingdoms SET budget = budget + ? WHERE id=?', (kingdom_amount, kingdom['id']))
         db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)',
                    (None, kingdom['id'], kingdom_amount, description or 'Ежедневный доход королевству'))
+    player_lines = [f"{user['username']}: {float(user['daily_income'])}" for user in users if not role_is_authority(user['role'])]
+    authority_lines = [f"{user['username']}: {float(user['daily_income'])}" for user in users if role_is_authority(user['role'])]
+    kingdom_lines = [f"{kingdom['name']}: {float(kingdom['daily_income'])}" for kingdom in kingdoms]
+    detail_parts = [
+        f'Игрокам: {player_total}',
+        f'Власти: {authority_total}',
+        f'Королевствам: {kingdom_total}',
+    ]
+    if player_lines:
+        detail_parts.append('игроки: ' + ', '.join(player_lines))
+    if authority_lines:
+        detail_parts.append('власть: ' + ', '.join(authority_lines))
+    if kingdom_lines:
+        detail_parts.append('королевства: ' + ', '.join(kingdom_lines))
     db.execute("INSERT INTO reports (kingdom_id, report_type, amount, title, description, author_name, recipient_name, nickname) VALUES (?,?,?,?,?,?,?,?)",
-               (None, 'Ежедневный доход', total, 'Ежедневный доход', f'Игрокам: {user_total}, королевствам: {kingdom_total} | {description or "автоматическая выплата в 00:01"}', 'Император', 'Игроки и королевства', 'Казна Императора'))
+               (None, 'Ежедневный доход', total, 'Ежедневный доход', f'{"; ".join(detail_parts)} | {description or "автоматическая выплата в 00:01"}', 'Император', 'Игроки, власть и королевства', 'Казна Императора'))
     db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)',
                (None, None, total, description or 'Ежедневный доход'))
     set_setting(db, DAILY_INCOME_LAST_DATE_KEY, run_date)
@@ -549,8 +588,31 @@ def dashboard():
     kingdoms = query_db('SELECT * FROM kingdoms')
     reports = query_db('SELECT r.*, k.name as kingdom_name FROM reports r LEFT JOIN kingdoms k ON r.kingdom_id=k.id ORDER BY r.created_at DESC LIMIT 10')
     treasury = get_treasury()
-    users = query_db("SELECT id, username, role, balance, daily_income FROM users WHERE role != 'emperor' ORDER BY role, username")
-    return render_template('dashboard.html', kingdoms=kingdoms, reports=reports, treasury=treasury, users=users)
+    return render_template('dashboard.html', kingdoms=kingdoms, reports=reports, treasury=treasury)
+
+
+@app.route('/income')
+@login_required
+def income():
+    user = session['user']
+    if user['role'] != 'emperor':
+        flash('Только император может управлять доходами')
+        return redirect(url_for('dashboard'))
+    player_users = query_db(
+        "SELECT id, username, role, balance, daily_income FROM users WHERE role NOT IN ('emperor','king','graf') ORDER BY username"
+    )
+    authority_users = query_db(
+        "SELECT id, username, role, balance, daily_income FROM users WHERE role IN ('king','graf') ORDER BY role, username"
+    )
+    kingdoms = query_db('SELECT * FROM kingdoms ORDER BY name')
+    treasury = get_treasury()
+    return render_template(
+        'income.html',
+        player_users=player_users,
+        authority_users=authority_users,
+        kingdoms=kingdoms,
+        treasury=treasury,
+    )
 
 @app.route('/allocate', methods=['POST'])
 @login_required
@@ -661,17 +723,25 @@ def daily_income():
     amount = request.form.get('amount', 0)
     db = get_db()
     if target_type == 'user':
-        ok = set_user_daily_income(db, request.form.get('user_id'), amount)
+        target = db.execute("SELECT id, username, role FROM users WHERE id=? AND role != 'emperor'", (request.form.get('user_id'),)).fetchone()
+        ok = target is not None and set_user_daily_income(db, target['id'], amount)
+        if ok:
+            kind = 'власти' if role_is_authority(target['role']) else 'игроку'
+            create_daily_income_assignment_report(db, parse_money_amount(amount), target['username'], kind)
     elif target_type == 'kingdom':
-        ok = set_kingdom_daily_income(db, request.form.get('kingdom_id'), amount)
+        target = db.execute('SELECT id, name FROM kingdoms WHERE id=?', (request.form.get('kingdom_id'),)).fetchone()
+        ok = target is not None and set_kingdom_daily_income(db, target['id'], amount)
+        if ok:
+            create_daily_income_assignment_report(db, parse_money_amount(amount), target['name'], 'королевству', kingdom_id=target['id'])
     else:
         ok = False
     if ok:
         db.commit()
+        send_report_to_telegram()
         flash('Ежедневный доход назначен')
     else:
         flash('Не удалось назначить ежедневный доход')
-    return redirect(url_for('dashboard'))
+    return redirect(url_for('income'))
 
 
 @app.route('/submit_report', methods=['GET','POST'])
@@ -710,7 +780,7 @@ def submit_report():
 @app.route('/reports')
 @login_required
 def reports():
-    reports = query_db('SELECT r.*, k.name as kingdom_name FROM reports r JOIN kingdoms k ON r.kingdom_id=k.id ORDER BY r.created_at DESC')
+    reports = query_db('SELECT r.*, k.name as kingdom_name FROM reports r LEFT JOIN kingdoms k ON r.kingdom_id=k.id ORDER BY r.created_at DESC')
     return render_template('reports.html', reports=reports)
 
 if __name__=='__main__':

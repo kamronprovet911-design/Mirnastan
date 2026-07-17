@@ -5,24 +5,12 @@
     <div class="card p-4" style="color: black;">
       <h3 class="mb-3" style="color: black;">Бюджеты королевств</h3>
       <table class="table" style="color: black;">
-        <thead><tr><th>Королевство</th><th>Баланс</th><th>Ежедневный доход</th><th>Операции</th></tr></thead>
+        <thead><tr><th>Королевство</th><th>Баланс</th><th>Операции</th></tr></thead>
         <tbody>
           {% for k in kingdoms %}
           <tr>
             <td>{{ k.name }}</td>
             <td>{{ k.budget }}</td>
-            <td>
-              {% if session.user.role=='emperor' %}
-              <form class="d-flex gap-2" method="post" action="/daily_income">
-                <input type="hidden" name="target_type" value="kingdom">
-                <input type="hidden" name="kingdom_id" value="{{ k.id }}">
-                <input name="amount" type="number" min="0" step="0.01" value="{{ k.daily_income or 0 }}" class="form-control form-control-sm" style="max-width:120px;">
-                <button class="btn btn-sm btn-outline-success">Сохранить</button>
-              </form>
-              {% else %}
-              {{ k.daily_income or 0 }}
-              {% endif %}
-            </td>
             <td>
               {% if session.user.role=='emperor' %}
               <div class="d-flex gap-2 flex-wrap">
@@ -92,32 +80,7 @@
       </form>
       {% endif %}
       {% if session.user.role=='emperor' %}
-      <hr>
-      <h5 style="color: black;">Доход игрокам</h5>
-      <div class="table-responsive" style="max-height: 320px; overflow-y: auto;">
-        <table class="table table-sm align-middle" style="color: black;">
-          <thead><tr><th>Игрок</th><th>Баланс</th><th>Доход</th></tr></thead>
-          <tbody>
-            {% for u in users %}
-            <tr>
-              <td>
-                <strong>{{ u.username }}</strong><br>
-                <small class="text-muted">{{ u.role }}</small>
-              </td>
-              <td>{{ u.balance or 0 }}</td>
-              <td>
-                <form class="d-flex gap-2" method="post" action="/daily_income">
-                  <input type="hidden" name="target_type" value="user">
-                  <input type="hidden" name="user_id" value="{{ u.id }}">
-                  <input name="amount" type="number" min="0" step="0.01" value="{{ u.daily_income or 0 }}" class="form-control form-control-sm" style="max-width:110px;">
-                  <button class="btn btn-sm btn-outline-success">OK</button>
-                </form>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+      <a class="btn btn-outline-success w-100 mt-3" href="/income">Настроить ежедневные доходы</a>
       {% endif %}
       <a class="btn btn-gold w-100 mt-3" href="/submit_report">Отправить новый отчёт</a>
     </div>

@@ -3,6 +3,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import app as app_module
@@ -120,28 +121,47 @@ class FinanceMechanicsTests(unittest.TestCase):
 
     def test_emperor_can_assign_daily_income_to_user_and_kingdom(self):
         app_module.app.config['TESTING'] = True
-        with app_module.app.test_client() as client:
-            with client.session_transaction() as sess:
-                sess['user'] = {'username': 'emperor', 'role': 'emperor', 'balance': 0}
+        with patch.object(app_module, 'send_report_to_telegram'):
+            with app_module.app.test_client() as client:
+                with client.session_transaction() as sess:
+                    sess['user'] = {'username': 'emperor', 'role': 'emperor', 'balance': 0}
 
-            user_response = client.post('/daily_income', data={
-                'target_type': 'user',
-                'user_id': '1',
-                'amount': '75',
-            })
-            kingdom_response = client.post('/daily_income', data={
-                'target_type': 'kingdom',
-                'kingdom_id': '1',
-                'amount': '250',
-            })
+                user_response = client.post('/daily_income', data={
+                    'target_type': 'user',
+                    'user_id': '1',
+                    'amount': '75',
+                })
+                kingdom_response = client.post('/daily_income', data={
+                    'target_type': 'kingdom',
+                    'kingdom_id': '1',
+                    'amount': '250',
+                })
 
         user_income = self.conn.execute("SELECT daily_income FROM users WHERE username='king_nerdia'").fetchone()[0]
         kingdom_income = self.conn.execute('SELECT daily_income FROM kingdoms WHERE id=1').fetchone()[0]
+        reports = self.conn.execute("SELECT report_type, amount, recipient_name FROM reports WHERE report_type='Назначение дохода' ORDER BY id").fetchall()
 
         self.assertEqual(user_response.status_code, 302)
         self.assertEqual(kingdom_response.status_code, 302)
         self.assertEqual(float(user_income), 75.0)
         self.assertEqual(float(kingdom_income), 250.0)
+        self.assertEqual(len(reports), 2)
+        self.assertEqual(float(reports[0][1]), 75.0)
+        self.assertEqual(float(reports[1][1]), 250.0)
+
+    def test_income_page_lists_registered_players_and_authority(self):
+        self.conn.execute("INSERT INTO users (username, role, balance) VALUES ('merchant_mila', 'merchant', 125)")
+        self.conn.commit()
+        app_module.app.config['TESTING'] = True
+        with app_module.app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess['user'] = {'username': 'emperor', 'role': 'emperor', 'balance': 0}
+            response = client.get('/income')
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('merchant_mila', html)
+        self.assertIn('king_nerdia', html)
 
     def test_register_and_login_create_schema_on_empty_database(self):
         empty_db = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
