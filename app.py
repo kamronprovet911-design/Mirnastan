@@ -420,6 +420,42 @@ def reports():
     reports = query_db('SELECT r.*, k.name as kingdom_name FROM reports r JOIN kingdoms k ON r.kingdom_id=k.id ORDER BY r.created_at DESC')
     return render_template('reports.html', reports=reports)
 
+@app.route('/income')
+@login_required
+def income():
+    if session['user']['role'] != 'emperor':
+        flash('Только император может настраивать доходы')
+        return redirect(url_for('dashboard'))
+    
+    player_users = query_db('SELECT * FROM users WHERE role IN (?,?)', ('peasant', 'citizen'))
+    authority_users = query_db('SELECT * FROM users WHERE role IN (?,?,?)', ('emperor', 'king', 'graf'))
+    kingdoms = query_db('SELECT * FROM kingdoms')
+    treasury = get_treasury()
+    
+    return render_template('income.html', player_users=player_users, authority_users=authority_users, kingdoms=kingdoms, treasury=treasury)
+
+@app.route('/daily_income', methods=['POST'])
+@login_required
+def daily_income():
+    if session['user']['role'] != 'emperor':
+        flash('Только император может настраивать доходы')
+        return redirect(url_for('dashboard'))
+    
+    target_type = request.form.get('target_type')
+    amount = float(request.form.get('amount', 0))
+    db = get_db()
+    
+    if target_type == 'user':
+        user_id = request.form.get('user_id')
+        db.execute('UPDATE users SET daily_income=? WHERE id=?', (amount, user_id))
+    elif target_type == 'kingdom':
+        kingdom_id = request.form.get('kingdom_id')
+        db.execute('UPDATE kingdoms SET daily_income=? WHERE id=?', (amount, kingdom_id))
+    
+    db.commit()
+    flash('Доход обновлён')
+    return redirect(url_for('income'))
+
 @app.route('/maps')
 @login_required
 def maps():
