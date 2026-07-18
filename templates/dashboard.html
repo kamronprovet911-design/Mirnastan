@@ -34,6 +34,14 @@
           <hr>
           <h5 class="mb-2">Казна Императора</h5>
           <p class="h3">{{ "{:,.0f}".format(treasury) }} Мир</p>
+          {% if session.user.role=='emperor' %}
+          <form method="post" action="/update_treasury" class="mt-2">
+            <div class="input-group">
+              <input name="amount" type="number" class="form-control" placeholder="Новая сумма" value="{{ treasury }}">
+              <button class="btn btn-sm btn-gold">Изменить</button>
+            </div>
+          </form>
+          {% endif %}
         </div>
       </div>
       <div class="col-lg-6">

@@ -456,6 +456,20 @@ def daily_income():
     flash('Доход обновлён')
     return redirect(url_for('income'))
 
+@app.route('/update_treasury', methods=['POST'])
+@login_required
+def update_treasury():
+    if session['user']['role'] != 'emperor':
+        flash('Только император может менять казну')
+        return redirect(url_for('dashboard'))
+    
+    amount = float(request.form.get('amount', 0))
+    db = get_db()
+    db.execute("UPDATE settings SET value=? WHERE key='treasury'", (str(amount),))
+    db.commit()
+    flash('Казна обновлена')
+    return redirect(url_for('dashboard'))
+
 @app.route('/maps')
 @login_required
 def maps():
