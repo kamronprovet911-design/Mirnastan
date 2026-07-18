@@ -7,6 +7,9 @@
         <div>
           <h3 class="mb-1" style="color: black;">Доходы</h3>
           <p class="mb-0 text-dark"><strong>Казна Императора:</strong> {{ treasury }}</p>
+          {% if session.user.role == 'king' %}
+          <p class="mb-0 text-dark">Король может назначать доход жителям и графам своего королевства.</p>
+          {% endif %}
         </div>
         <a class="btn btn-outline-dark" href="/dashboard">Назад в панель</a>
       </div>
@@ -26,7 +29,10 @@
                 <strong>{{ u.username }}</strong><br>
                 <small class="text-muted">{{ u.role }}</small>
               </td>
-              <td>{{ u.balance or 0 }}</td>
+              <td>
+                {{ u.balance or 0 }}<br>
+                <small class="text-muted">{{ u.kingdom_name or 'без королевства' }}</small>
+              </td>
               <td>
                 <form class="d-flex gap-2" method="post" action="/daily_income">
                   <input type="hidden" name="target_type" value="user">
@@ -58,7 +64,10 @@
                 <strong>{{ u.username }}</strong><br>
                 <small class="text-muted">{{ u.role }}</small>
               </td>
-              <td>{{ u.balance or 0 }}</td>
+              <td>
+                {{ u.balance or 0 }}<br>
+                <small class="text-muted">{{ u.kingdom_name or 'без королевства' }}</small>
+              </td>
               <td>
                 <form class="d-flex gap-2" method="post" action="/daily_income">
                   <input type="hidden" name="target_type" value="user">
@@ -77,6 +86,7 @@
     </div>
   </div>
 
+  {% if can_manage_kingdoms %}
   <div class="col-12">
     <div class="card p-4" style="color: black;">
       <h4 class="mb-3" style="color: black;">Королевства</h4>
@@ -103,5 +113,6 @@
       </div>
     </div>
   </div>
+  {% endif %}
 </div>
 {% endblock %}

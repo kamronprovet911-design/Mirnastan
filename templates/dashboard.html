@@ -49,8 +49,11 @@
           <h4 class="mb-3">Быстрые действия</h4>
           <div class="d-grid gap-2">
             <a class="btn btn-gold" href="/submit_report">Отправить новый отчёт</a>
-            {% if session.user.role=='emperor' %}
+            {% if session.user.role in ['emperor','king'] %}
             <a class="btn btn-outline-success" href="/income">Настроить ежедневные доходы</a>
+            {% endif %}
+            {% if session.user.role=='emperor' %}
+            <a class="btn btn-outline-secondary" href="/council">Совет Императора</a>
             {% endif %}
             <a class="btn btn-outline-info" href="/maps">Просмотреть карты</a>
             <a class="btn btn-outline-warning" href="/cards">Карточки</a>

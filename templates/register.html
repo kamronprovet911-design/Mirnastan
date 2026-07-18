@@ -21,6 +21,15 @@
             {% endfor %}
           </select>
         </div>
+        <div class="mb-3">
+          <label class="form-label">Королевство</label>
+          <select class="form-select" name="kingdom_name">
+            <option value="">Без королевства</option>
+            {% for k in kingdoms %}
+            <option value="{{ k.name }}">{{ k.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
         <button class="btn btn-gold w-100">Зарегистрироваться</button>
       </form>
       <div class="mt-3 text-center">

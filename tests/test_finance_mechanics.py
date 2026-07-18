@@ -18,7 +18,7 @@ class FinanceMechanicsTests(unittest.TestCase):
         self.conn.row_factory = sqlite3.Row
         self.conn.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT UNIQUE, value TEXT)')
         self.conn.execute('CREATE TABLE IF NOT EXISTS kingdoms (id INTEGER PRIMARY KEY, name TEXT UNIQUE, budget REAL DEFAULT 0, daily_income REAL DEFAULT 0)')
-        self.conn.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, role TEXT, password_hash TEXT, balance REAL DEFAULT 0, daily_income REAL DEFAULT 0)')
+        self.conn.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, role TEXT, password_hash TEXT, balance REAL DEFAULT 0, daily_income REAL DEFAULT 0, kingdom_name TEXT DEFAULT "")')
         self.conn.execute('CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY, from_user INTEGER, to_kingdom INTEGER, amount REAL, description TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
         self.conn.execute('CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY, kingdom_id INTEGER, report_type TEXT, amount REAL, title TEXT, description TEXT, author_name TEXT, recipient_name TEXT, nickname TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, posted INTEGER DEFAULT 0)')
         self.conn.execute("INSERT INTO settings (key, value) VALUES ('treasury', '10000')")
@@ -171,6 +171,41 @@ class FinanceMechanicsTests(unittest.TestCase):
         self.assertEqual(len(reports), 2)
         self.assertEqual(float(reports[0][1]), 75.0)
         self.assertEqual(float(reports[1][1]), 250.0)
+
+    def test_king_can_assign_daily_income_to_own_graf(self):
+        self.conn.execute("INSERT INTO users (username, role, balance, kingdom_name) VALUES ('graf_nerdia_1', 'graf', 100, 'Нердия')")
+        self.conn.commit()
+        app_module.app.config['TESTING'] = True
+        with patch.object(app_module, 'send_report_to_telegram'):
+            with app_module.app.test_client() as client:
+                with client.session_transaction() as sess:
+                    sess['user'] = {'username': 'king_nerdia', 'role': 'king', 'balance': 0, 'kingdom_name': 'Нердия'}
+                response = client.post('/daily_income', data={
+                    'target_type': 'user',
+                    'user_id': '3',
+                    'amount': '125',
+                })
+
+        graf_income = self.conn.execute("SELECT daily_income FROM users WHERE username='graf_nerdia_1'").fetchone()[0]
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(float(graf_income), 125.0)
+
+    def test_emperor_can_add_user_to_council_with_income(self):
+        app_module.app.config['TESTING'] = True
+        with app_module.app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess['user'] = {'username': 'emperor', 'role': 'emperor', 'balance': 0}
+            response = client.post('/council/add', data={
+                'user_id': '1',
+                'council_income': '500',
+                'note': 'Финансы',
+            })
+
+        council = self.conn.execute('SELECT user_id, council_income, note FROM imperial_council WHERE user_id=1').fetchone()
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNotNone(council)
+        self.assertEqual(float(council[1]), 500.0)
+        self.assertEqual(council[2], 'Финансы')
 
     def test_income_page_lists_registered_players_and_authority(self):
         self.conn.execute("INSERT INTO users (username, role, balance) VALUES ('merchant_mila', 'merchant', 125)")
