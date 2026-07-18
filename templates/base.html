@@ -6,44 +6,179 @@
     <title>Империя Мирнастан</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-      body { background: linear-gradient(135deg, #07111f, #15304f); color: #f6f8fb; min-height: 100vh; }
-      .card, .navbar { border: 0; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
-      .hero { background: rgba(255,255,255,.08); border-radius: 24px; padding: 2rem; }
-      .nav-link { color: #dce9ff !important; }
-      .btn-gold { background: #f2b84b; color: #111; font-weight: 600; }
-      .btn-gold:hover { background: #ffc969; color: #111; }
-      .table-dark-custom { background: rgba(255,255,255,.06); }
+      :root {
+        --ink: #14110b;
+        --paper: #f3ead8;
+        --paper-soft: #fff8ea;
+        --gold: #d9a441;
+        --gold-bright: #f1c15b;
+        --forest: #244b37;
+        --wine: #6e2736;
+        --ocean: #12364a;
+      }
+
+      body {
+        min-height: 100vh;
+        color: #f7efe0;
+        background:
+          radial-gradient(circle at 15% 10%, rgba(217, 164, 65, .16), transparent 28%),
+          linear-gradient(135deg, #09141b 0%, #173929 46%, #111721 100%);
+      }
+
+      a { color: #f4cf78; }
+      a:hover { color: #ffe39d; }
+
+      .navbar {
+        background: rgba(8, 11, 13, .72);
+        border-bottom: 1px solid rgba(241, 193, 91, .28);
+        backdrop-filter: blur(10px);
+      }
+
+      .navbar-brand,
+      .nav-link { color: #f7efe0 !important; }
+
+      .nav-link {
+        border-radius: 8px;
+        padding-inline: .75rem !important;
+      }
+
+      .nav-link:hover,
+      .nav-link:focus {
+        background: rgba(255, 255, 255, .08);
+      }
+
+      .card {
+        color: var(--ink);
+        background: linear-gradient(180deg, var(--paper-soft), var(--paper));
+        border: 1px solid rgba(217, 164, 65, .35);
+        border-radius: 8px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, .2);
+      }
+
+      .hero {
+        min-height: min(68vh, 620px);
+        display: grid;
+        align-items: end;
+        padding: clamp(1.25rem, 3vw, 3rem);
+        border-radius: 8px;
+        overflow: hidden;
+        background:
+          linear-gradient(180deg, rgba(0, 0, 0, .08), rgba(0, 0, 0, .74)),
+          url("{{ url_for('static', filename='maps/mirnastan.jpg') }}") center/cover;
+      }
+
+      .hero-content {
+        max-width: 720px;
+        text-shadow: 0 2px 18px rgba(0, 0, 0, .68);
+      }
+
+      .btn-gold {
+        background: var(--gold);
+        color: #17110a;
+        border-color: var(--gold);
+        font-weight: 600;
+      }
+
+      .btn-gold:hover,
+      .btn-gold:focus {
+        background: var(--gold-bright);
+        border-color: var(--gold-bright);
+        color: #17110a;
+      }
+
+      .app-tabs {
+        gap: .5rem;
+      }
+
+      .app-tabs .nav-link {
+        color: #f7efe0 !important;
+        border: 1px solid rgba(241, 193, 91, .28);
+        background: rgba(8, 11, 13, .32);
+      }
+
+      .app-tabs .nav-link.active {
+        color: #17110a !important;
+        background: var(--gold);
+        border-color: var(--gold);
+      }
+
+      .map-frame {
+        overflow: hidden;
+        border-radius: 8px;
+        background: #0d1416;
+      }
+
+      .map-frame img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .stat-tile {
+        min-height: 100%;
+        border-left: 4px solid var(--gold);
+      }
+
+      .soft-panel {
+        border-radius: 8px;
+        background: rgba(255, 255, 255, .08);
+        border: 1px solid rgba(241, 193, 91, .18);
+      }
+
+      .table thead th {
+        color: #5a4322;
+        white-space: nowrap;
+      }
+
+      .form-control,
+      .form-select {
+        border-radius: 8px;
+      }
+
+      @media (max-width: 575.98px) {
+        .container { padding-inline: .85rem; }
+        .hero { min-height: 520px; }
+        .btn,
+        .form-control,
+        .form-select { min-height: 42px; }
+      }
     </style>
   </head>
   <body>
-  <nav class="navbar navbar-expand-lg navbar-dark" style="background: rgba(0,0,0,.25);">
-    <div class="container">
-      <a class="navbar-brand fw-bold" href="/">Мирнастан</a>
-      <div class="collapse navbar-collapse">
-        <ul class="navbar-nav ms-auto">
-          {% if session.user %}
-          <li class="nav-item"><a class="nav-link" href="/dashboard">Панель</a></li>
-          {% if session.user.role=='emperor' %}
-          <li class="nav-item"><a class="nav-link" href="/income">Доходы</a></li>
-          {% endif %}
-          <li class="nav-item"><a class="nav-link" href="/submit_report">Новый отчёт</a></li>
-          <li class="nav-item"><a class="nav-link" href="/reports">Архив</a></li>
-          <li class="nav-item"><a class="nav-link" href="/logout">Выйти</a></li>
-          {% else %}
-          <li class="nav-item"><a class="nav-link" href="/register">Регистрация</a></li>
-          <li class="nav-item"><a class="nav-link" href="/login">Войти</a></li>
-          {% endif %}
-        </ul>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+      <div class="container">
+        <a class="navbar-brand fw-bold" href="/">Мирнастан</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Открыть меню">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="mainNav">
+          <ul class="navbar-nav ms-auto gap-lg-1">
+            {% if session.user %}
+            <li class="nav-item"><a class="nav-link" href="/dashboard">Панель</a></li>
+            <li class="nav-item"><a class="nav-link" href="/maps">Карты</a></li>
+            {% if session.user.role=='emperor' %}
+            <li class="nav-item"><a class="nav-link" href="/income">Доходы</a></li>
+            {% endif %}
+            <li class="nav-item"><a class="nav-link" href="/submit_report">Новый отчёт</a></li>
+            <li class="nav-item"><a class="nav-link" href="/reports">Архив</a></li>
+            <li class="nav-item"><a class="nav-link" href="/logout">Выйти</a></li>
+            {% else %}
+            <li class="nav-item"><a class="nav-link" href="/register">Регистрация</a></li>
+            <li class="nav-item"><a class="nav-link" href="/login">Войти</a></li>
+            {% endif %}
+          </ul>
+        </div>
       </div>
-    </div>
-  </nav>
-  <div class="container py-4">
-    {% with messages = get_flashed_messages() %}
-      {% if messages %}
-        <div class="alert alert-info">{{ messages[0] }}</div>
-      {% endif %}
-    {% endwith %}
-    {% block content %}{% endblock %}
-  </div>
+    </nav>
+    <main class="container py-4">
+      {% with messages = get_flashed_messages() %}
+        {% if messages %}
+          <div class="alert alert-info">{{ messages[0] }}</div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    {% block scripts %}{% endblock %}
   </body>
 </html>

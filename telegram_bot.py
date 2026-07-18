@@ -32,10 +32,9 @@ def process_pending_reports():
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute('SELECT r.id, r.amount, r.description, r.title, r.report_type, r.author_name, r.recipient_name, r.nickname, k.name as kingdom FROM reports r LEFT JOIN kingdoms k ON r.kingdom_id=k.id WHERE r.posted=0')
+    c.execute('SELECT r.id, r.amount, r.description, r.title, r.report_type, r.author_name, r.recipient_name, r.nickname, k.name as kingdom FROM reports r JOIN kingdoms k ON r.kingdom_id=k.id WHERE posted=0')
     rows = c.fetchall()
     for r in rows:
-        kingdom_name = r['kingdom'] or 'Общее'
         title = r['title'] or 'Без заголовка'
         report_type = r['report_type'] or 'Другое'
         author = r['author_name'] or 'Не указано'
@@ -44,14 +43,14 @@ def process_pending_reports():
         amount_text = f"\nСумма: {r['amount']}" if r['amount'] not in (None, '') else ''
         text = (
             f"📌 Новый отчёт\n"
-            f"🏰 Королевство: {kingdom_name}\n"
+            f"🏰 Королевство: {r['kingdom']}\n"
             f"🧾 Тип: {report_type}\n"
             f"📝 Заголовок: {title}\n"
             f"👤 От кого: {author}{nickname}\n"
             f"🎯 Кому: {recipient}{amount_text}\n"
             f"💬 Подробности:\n{r['description']}"
         )
-        thread = THREAD_MAP.get(kingdom_name)
+        thread = THREAD_MAP.get(r['kingdom'])
         ok = post_message(CHAT_ID, text, thread_id=thread)
         if ok:
             c.execute('UPDATE reports SET posted=1 WHERE id=?', (r['id'],))

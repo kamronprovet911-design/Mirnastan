@@ -1,9 +1,5 @@
 import sqlite3
 import os
-import threading
-import time
-from datetime import datetime
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Flask, g, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import check_password_hash, generate_password_hash
 from dotenv import load_dotenv
@@ -14,130 +10,18 @@ DB_PATH = os.getenv('DATABASE', 'budget.db')
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET', 'dev-secret')
 
-APP_TIMEZONE = os.getenv('APP_TIMEZONE') or os.getenv('TZ')
-DAILY_INCOME_HOUR = 0
-DAILY_INCOME_MINUTE = 1
-DAILY_INCOME_LAST_DATE_KEY = 'daily_income_last_date'
-AUTHORITY_ROLES = ('king', 'graf')
-DEFAULT_TREASURY = 200000000000.0
-DEFAULT_KINGDOMS = [
-    ('Нердия', 1004000000.0),
-    ('Астерион', 500000000.0),
-    ('Мирноуль', 20000000.0),
-]
-DEFAULT_USERS = [
-    ('emperor', 'emperor'),
-    ('king_nerdia', 'king'),
-    ('king_asterion', 'king'),
-    ('king_mirnoul', 'king'),
-    ('graf_nerdia_1', 'graf'),
-    ('graf_asterion_1', 'graf'),
-    ('graf_mirnoul_1', 'graf'),
-]
-
-
-def get_current_time():
-    if APP_TIMEZONE:
-        try:
-            return datetime.now(ZoneInfo(APP_TIMEZONE))
-        except ZoneInfoNotFoundError:
-            pass
-    return datetime.now()
-
-
-def get_table_columns(db, table_name):
-    return [row[1] for row in db.execute(f'PRAGMA table_info({table_name})')]
-
-
-def ensure_column(db, table_name, column_name, definition):
-    columns = get_table_columns(db, table_name)
-    if columns and column_name not in columns:
-        db.execute(f'ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}')
-
-
-def ensure_setting(db, key, value):
-    row = db.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
-    if row is None:
-        db.execute('INSERT INTO settings (key, value) VALUES (?,?)', (key, str(value)))
-
-
-def ensure_runtime_tables(db):
-    db.execute('''CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY,
-        username TEXT UNIQUE,
-        role TEXT,
-        password_hash TEXT,
-        balance REAL DEFAULT 0,
-        daily_income REAL DEFAULT 0
-    )''')
-    db.execute('''CREATE TABLE IF NOT EXISTS kingdoms (
-        id INTEGER PRIMARY KEY,
-        name TEXT UNIQUE,
-        budget REAL DEFAULT 0,
-        daily_income REAL DEFAULT 0
-    )''')
-    db.execute('''CREATE TABLE IF NOT EXISTS settings (
-        id INTEGER PRIMARY KEY,
-        key TEXT UNIQUE,
-        value TEXT
-    )''')
-    db.execute('''CREATE TABLE IF NOT EXISTS transactions (
-        id INTEGER PRIMARY KEY,
-        from_user INTEGER,
-        to_kingdom INTEGER,
-        amount REAL,
-        description TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )''')
-    db.execute('''CREATE TABLE IF NOT EXISTS reports (
-        id INTEGER PRIMARY KEY,
-        kingdom_id INTEGER,
-        report_type TEXT,
-        amount REAL,
-        title TEXT,
-        description TEXT,
-        author_name TEXT,
-        recipient_name TEXT,
-        nickname TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        posted INTEGER DEFAULT 0
-    )''')
-
-
-def seed_runtime_defaults(db):
-    for name, budget in DEFAULT_KINGDOMS:
-        db.execute('INSERT OR IGNORE INTO kingdoms (name, budget) VALUES (?,?)', (name, budget))
-    ensure_setting(db, 'treasury', str(DEFAULT_TREASURY))
-    ensure_setting(db, DAILY_INCOME_LAST_DATE_KEY, '')
-    for username, role in DEFAULT_USERS:
-        existing = db.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone()
-        if existing is None:
-            db.execute(
-                'INSERT INTO users (username, role, password_hash) VALUES (?,?,?)',
-                (username, role, generate_password_hash(f'{username}_pass')),
-            )
-
-
-def ensure_runtime_schema(db):
-    ensure_runtime_tables(db)
-    ensure_column(db, 'users', 'balance', 'REAL DEFAULT 0')
-    ensure_column(db, 'users', 'daily_income', 'REAL DEFAULT 0')
-    ensure_column(db, 'kingdoms', 'daily_income', 'REAL DEFAULT 0')
-    ensure_column(db, 'reports', 'report_type', 'TEXT')
-    ensure_column(db, 'reports', 'title', 'TEXT')
-    ensure_column(db, 'reports', 'author_name', 'TEXT')
-    ensure_column(db, 'reports', 'recipient_name', 'TEXT')
-    ensure_column(db, 'reports', 'nickname', 'TEXT')
-    seed_runtime_defaults(db)
-    db.commit()
-
-
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
         db = g._database = sqlite3.connect(DB_PATH)
         db.row_factory = sqlite3.Row
-    ensure_runtime_schema(db)
+    try:
+        columns = [row[1] for row in db.execute('PRAGMA table_info(users)')]
+        if 'balance' not in columns:
+            db.execute('ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0')
+            db.commit()
+    except Exception:
+        pass
     return db
 
 @app.teardown_appcontext
@@ -197,13 +81,6 @@ def get_user_balance(db, username):
     return 0.0
 
 
-def get_user_kingdom(db, user):
-    kingdom_name = get_user_kingdom_name(user)
-    if not kingdom_name:
-        return None
-    return db.execute('SELECT * FROM kingdoms WHERE name=?', (kingdom_name,)).fetchone()
-
-
 def apply_people_expense(db, amount, description='', acting_user=None):
     amount = float(amount)
     if amount <= 0:
@@ -211,7 +88,6 @@ def apply_people_expense(db, amount, description='', acting_user=None):
     acting_user = acting_user or {}
     role = (acting_user or {}).get('role', '').lower()
     username = (acting_user or {}).get('username')
-    report_kingdom_id = None
 
     if role == 'emperor' or not username:
         treasury_row = db.execute("SELECT value FROM settings WHERE key='treasury'").fetchone()
@@ -222,18 +98,6 @@ def apply_people_expense(db, amount, description='', acting_user=None):
         from_user_id = None
         author_name = 'Император'
         nickname = 'Казна Императора'
-    elif role in AUTHORITY_ROLES:
-        kingdom = get_user_kingdom(db, acting_user)
-        if not kingdom:
-            return False
-        if float(kingdom['budget'] or 0) < amount:
-            return False
-        db.execute('UPDATE kingdoms SET budget = budget - ? WHERE id=?', (amount, kingdom['id']))
-        from_user_id = None
-        report_kingdom_id = kingdom['id']
-        title = 'Король' if role == 'king' else 'Граф'
-        author_name = f'{title} {kingdom["name"]}'
-        nickname = f'Казна {kingdom["name"]}'
     else:
         balance = get_user_balance(db, username)
         if balance < amount:
@@ -245,8 +109,8 @@ def apply_people_expense(db, amount, description='', acting_user=None):
         nickname = username or 'Личный баланс'
 
     db.execute("INSERT INTO reports (kingdom_id, report_type, amount, title, description, author_name, recipient_name, nickname) VALUES (?,?,?,?,?,?,?,?)",
-               (report_kingdom_id, 'Расход на народ', -amount, 'Трата на народ', f'Средства направлены на нужды населения | {description or "обеспечение благосостояния"}', author_name, 'Народ', nickname))
-    db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)', (from_user_id, report_kingdom_id, -amount, description or 'Расход на народ'))
+               (None, 'Расход на народ', -amount, 'Трата на народ', f'Средства направлены на нужды населения | {description or "обеспечение благосостояния"}', author_name, 'Народ', nickname))
+    db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)', (from_user_id, None, -amount, description or 'Расход на народ'))
     return True
 
 
@@ -340,207 +204,15 @@ def get_treasury():
             return float(row['value'])
         except (TypeError, ValueError):
             pass
-    return DEFAULT_TREASURY
+    return 200000000000.0
 
 
 def send_report_to_telegram():
     try:
         import telegram_bot
-        telegram_bot.DB = DB_PATH
         telegram_bot.process_pending_reports()
     except Exception as exc:
         print('Telegram send failed:', exc)
-
-
-def get_setting_value(db, key, default=''):
-    row = db.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
-    if row and row[0] is not None:
-        return row[0]
-    return default
-
-
-def get_setting_float(db, key, default=0.0):
-    try:
-        return float(get_setting_value(db, key, default))
-    except (TypeError, ValueError):
-        return default
-
-
-def set_setting(db, key, value):
-    cur = db.execute('UPDATE settings SET value=? WHERE key=?', (str(value), key))
-    if cur.rowcount == 0:
-        db.execute('INSERT INTO settings (key, value) VALUES (?,?)', (key, str(value)))
-
-
-def get_treasury_from_db(db):
-    return get_setting_float(db, 'treasury', DEFAULT_TREASURY)
-
-
-def parse_money_amount(value):
-    try:
-        amount = float(value or 0)
-    except (TypeError, ValueError):
-        return None
-    if amount < 0:
-        return None
-    return amount
-
-
-def set_user_daily_income(db, user_id, amount):
-    amount = parse_money_amount(amount)
-    if amount is None:
-        return False
-    user = db.execute('SELECT id FROM users WHERE id=?', (user_id,)).fetchone()
-    if not user:
-        return False
-    db.execute('UPDATE users SET daily_income=? WHERE id=?', (amount, user_id))
-    return True
-
-
-def set_kingdom_daily_income(db, kingdom_id, amount):
-    amount = parse_money_amount(amount)
-    if amount is None:
-        return False
-    kingdom = db.execute('SELECT id FROM kingdoms WHERE id=?', (kingdom_id,)).fetchone()
-    if not kingdom:
-        return False
-    db.execute('UPDATE kingdoms SET daily_income=? WHERE id=?', (amount, kingdom_id))
-    return True
-
-
-def role_is_authority(role):
-    return (role or '').lower() in AUTHORITY_ROLES
-
-
-def create_daily_income_assignment_report(db, amount, recipient_name, target_kind, kingdom_id=None):
-    amount = float(amount)
-    action = 'отключен' if amount == 0 else 'назначен'
-    db.execute(
-        'INSERT INTO reports (kingdom_id, report_type, amount, title, description, author_name, recipient_name, nickname) VALUES (?,?,?,?,?,?,?,?)',
-        (
-            kingdom_id,
-            'Назначение дохода',
-            amount,
-            'Настройка ежедневного дохода',
-            f'Ежедневный доход {action}: {target_kind} {recipient_name} | сумма {amount} каждый день в 00:01',
-            'Император',
-            recipient_name,
-            'Казна Императора',
-        ),
-    )
-
-
-def apply_bulk_income(db, user_amount=0, kingdom_amount=0, description=''):
-    user_amount = parse_money_amount(user_amount)
-    kingdom_amount = parse_money_amount(kingdom_amount)
-    if user_amount is None or kingdom_amount is None:
-        return False
-    users = db.execute("SELECT id, username FROM users WHERE role != 'emperor'").fetchall()
-    kingdoms = db.execute('SELECT id, name FROM kingdoms').fetchall()
-    total = (user_amount * len(users)) + (kingdom_amount * len(kingdoms))
-    if total <= 0:
-        return False
-    if get_treasury_from_db(db) < total:
-        return False
-    db.execute("UPDATE settings SET value = CAST(value AS REAL) - ? WHERE key='treasury'", (total,))
-    if user_amount > 0:
-        db.execute("UPDATE users SET balance = balance + ? WHERE role != 'emperor'", (user_amount,))
-    if kingdom_amount > 0:
-        db.execute('UPDATE kingdoms SET budget = budget + ?', (kingdom_amount,))
-        for kingdom in kingdoms:
-            db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)',
-                       (None, kingdom['id'], kingdom_amount, description or 'Ежедневный доход королевству'))
-    db.execute("INSERT INTO reports (kingdom_id, report_type, amount, title, description, author_name, recipient_name, nickname) VALUES (?,?,?,?,?,?,?,?)",
-               (None, 'Ежедневный доход', total, 'Ежедневный доход', f'Игрокам: {user_amount}, королевствам: {kingdom_amount} | {description or "выплата дохода"}', 'Император', 'Игроки и королевства', 'Казна Императора'))
-    db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)',
-               (None, None, total, description or 'Ежедневный доход'))
-    return True
-
-
-def apply_daily_income(db, amount, description=''):
-    return apply_bulk_income(db, amount, 0, description)
-
-
-def is_daily_income_time(now):
-    return now.hour == DAILY_INCOME_HOUR and now.minute == DAILY_INCOME_MINUTE
-
-
-def get_configured_income_recipients(db):
-    users = db.execute("SELECT id, username, role, daily_income FROM users WHERE role != 'emperor' AND COALESCE(daily_income, 0) > 0").fetchall()
-    kingdoms = db.execute('SELECT id, name, daily_income FROM kingdoms WHERE COALESCE(daily_income, 0) > 0').fetchall()
-    return users, kingdoms
-
-
-def apply_configured_daily_income(db, run_date, description=''):
-    if get_setting_value(db, DAILY_INCOME_LAST_DATE_KEY, '') == run_date:
-        return False
-    users, kingdoms = get_configured_income_recipients(db)
-    player_total = sum(float(user['daily_income'] or 0) for user in users if not role_is_authority(user['role']))
-    authority_total = sum(float(user['daily_income'] or 0) for user in users if role_is_authority(user['role']))
-    kingdom_total = sum(float(kingdom['daily_income'] or 0) for kingdom in kingdoms)
-    total = player_total + authority_total + kingdom_total
-    if total <= 0:
-        return False
-    if get_treasury_from_db(db) < total:
-        return False
-
-    db.execute("UPDATE settings SET value = CAST(value AS REAL) - ? WHERE key='treasury'", (total,))
-    for user in users:
-        db.execute('UPDATE users SET balance = balance + ? WHERE id=?', (float(user['daily_income']), user['id']))
-    for kingdom in kingdoms:
-        kingdom_amount = float(kingdom['daily_income'])
-        db.execute('UPDATE kingdoms SET budget = budget + ? WHERE id=?', (kingdom_amount, kingdom['id']))
-        db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)',
-                   (None, kingdom['id'], kingdom_amount, description or 'Ежедневный доход королевству'))
-    player_lines = [f"{user['username']}: {float(user['daily_income'])}" for user in users if not role_is_authority(user['role'])]
-    authority_lines = [f"{user['username']}: {float(user['daily_income'])}" for user in users if role_is_authority(user['role'])]
-    kingdom_lines = [f"{kingdom['name']}: {float(kingdom['daily_income'])}" for kingdom in kingdoms]
-    detail_parts = [
-        f'Игрокам: {player_total}',
-        f'Власти: {authority_total}',
-        f'Королевствам: {kingdom_total}',
-    ]
-    if player_lines:
-        detail_parts.append('игроки: ' + ', '.join(player_lines))
-    if authority_lines:
-        detail_parts.append('власть: ' + ', '.join(authority_lines))
-    if kingdom_lines:
-        detail_parts.append('королевства: ' + ', '.join(kingdom_lines))
-    db.execute("INSERT INTO reports (kingdom_id, report_type, amount, title, description, author_name, recipient_name, nickname) VALUES (?,?,?,?,?,?,?,?)",
-               (None, 'Ежедневный доход', total, 'Ежедневный доход', f'{"; ".join(detail_parts)} | {description or "автоматическая выплата в 00:01"}', 'Император', 'Игроки, власть и королевства', 'Казна Императора'))
-    db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)',
-               (None, None, total, description or 'Ежедневный доход'))
-    set_setting(db, DAILY_INCOME_LAST_DATE_KEY, run_date)
-    return True
-
-
-def distribute_daily_income(now=None):
-    now = now or get_current_time()
-    if not is_daily_income_time(now):
-        return False
-    db = sqlite3.connect(DB_PATH)
-    db.row_factory = sqlite3.Row
-    try:
-        ensure_runtime_schema(db)
-        paid = apply_configured_daily_income(db, now.date().isoformat(), 'автоматическая выплата в 00:01')
-        if paid:
-            db.commit()
-            send_report_to_telegram()
-        return paid
-    finally:
-        db.close()
-
-
-def run_daily_income_loop():
-    while True:
-        try:
-            distribute_daily_income()
-        except Exception as exc:
-            print('Daily income loop error:', exc)
-        time.sleep(60)
-
-
-threading.Thread(target=run_daily_income_loop, daemon=True).start()
 
 
 def login_required(f):
@@ -591,7 +263,7 @@ def login():
         password = request.form['password']
         user = get_user(username)
         if user and check_password_hash(user['password_hash'], password):
-            session['user'] = dict(username=user['username'], role=user['role'], balance=user['balance'] or 0)
+            session['user'] = dict(username=user['username'], role=user['role'], balance=user.get('balance', 0))
             return redirect(url_for('dashboard'))
         flash('Неверные учётные данные')
     return render_template('login.html')
@@ -606,33 +278,9 @@ def logout():
 def dashboard():
     db = get_db()
     kingdoms = query_db('SELECT * FROM kingdoms')
-    reports = query_db('SELECT r.*, k.name as kingdom_name FROM reports r LEFT JOIN kingdoms k ON r.kingdom_id=k.id ORDER BY r.created_at DESC LIMIT 10')
+    reports = query_db('SELECT r.*, k.name as kingdom_name FROM reports r JOIN kingdoms k ON r.kingdom_id=k.id ORDER BY r.created_at DESC LIMIT 10')
     treasury = get_treasury()
     return render_template('dashboard.html', kingdoms=kingdoms, reports=reports, treasury=treasury)
-
-
-@app.route('/income')
-@login_required
-def income():
-    user = session['user']
-    if user['role'] != 'emperor':
-        flash('Только император может управлять доходами')
-        return redirect(url_for('dashboard'))
-    player_users = query_db(
-        "SELECT id, username, role, balance, daily_income FROM users WHERE role NOT IN ('emperor','king','graf') ORDER BY username"
-    )
-    authority_users = query_db(
-        "SELECT id, username, role, balance, daily_income FROM users WHERE role IN ('king','graf') ORDER BY role, username"
-    )
-    kingdoms = query_db('SELECT * FROM kingdoms ORDER BY name')
-    treasury = get_treasury()
-    return render_template(
-        'income.html',
-        player_users=player_users,
-        authority_users=authority_users,
-        kingdoms=kingdoms,
-        treasury=treasury,
-    )
 
 @app.route('/allocate', methods=['POST'])
 @login_required
@@ -732,38 +380,6 @@ def transfer_between_kingdoms():
         flash('Невозможно выполнить перевод')
     return redirect(url_for('dashboard'))
 
-@app.route('/daily_income', methods=['POST'])
-@login_required
-def daily_income():
-    user = session['user']
-    if user['role'] != 'emperor':
-        flash('Только император может выдавать доход')
-        return redirect(url_for('dashboard'))
-    target_type = request.form.get('target_type')
-    amount = request.form.get('amount', 0)
-    db = get_db()
-    if target_type == 'user':
-        target = db.execute("SELECT id, username, role FROM users WHERE id=? AND role != 'emperor'", (request.form.get('user_id'),)).fetchone()
-        ok = target is not None and set_user_daily_income(db, target['id'], amount)
-        if ok:
-            kind = 'власти' if role_is_authority(target['role']) else 'игроку'
-            create_daily_income_assignment_report(db, parse_money_amount(amount), target['username'], kind)
-    elif target_type == 'kingdom':
-        target = db.execute('SELECT id, name FROM kingdoms WHERE id=?', (request.form.get('kingdom_id'),)).fetchone()
-        ok = target is not None and set_kingdom_daily_income(db, target['id'], amount)
-        if ok:
-            create_daily_income_assignment_report(db, parse_money_amount(amount), target['name'], 'королевству', kingdom_id=target['id'])
-    else:
-        ok = False
-    if ok:
-        db.commit()
-        send_report_to_telegram()
-        flash('Ежедневный доход назначен')
-    else:
-        flash('Не удалось назначить ежедневный доход')
-    return redirect(url_for('income'))
-
-
 @app.route('/submit_report', methods=['GET','POST'])
 @login_required
 def submit_report():
@@ -800,7 +416,7 @@ def submit_report():
 @app.route('/reports')
 @login_required
 def reports():
-    reports = query_db('SELECT r.*, k.name as kingdom_name FROM reports r LEFT JOIN kingdoms k ON r.kingdom_id=k.id ORDER BY r.created_at DESC')
+    reports = query_db('SELECT r.*, k.name as kingdom_name FROM reports r JOIN kingdoms k ON r.kingdom_id=k.id ORDER BY r.created_at DESC')
     return render_template('reports.html', reports=reports)
 
 if __name__=='__main__':

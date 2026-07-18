@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+  <div>
+    <h1 class="h3 mb-1">Карты Мирнастана</h1>
+    <p class="mb-0 text-light">Провинции, дороги, столицы и рабочие заметки для игровых решений.</p>
+  </div>
+  <a class="btn btn-gold" href="/submit_report?report_type=Письмо&title=Картографическая заметка">Отчёт по карте</a>
+</div>
+
+<ul class="nav nav-pills app-tabs mb-3" id="mapTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link {% if active_tab == 'empire' %}active{% endif %}" id="empire-tab" data-bs-toggle="pill" data-bs-target="#map-empire" type="button" role="tab" aria-controls="map-empire" aria-selected="{{ 'true' if active_tab == 'empire' else 'false' }}">Империя</button>
+  </li>
+  {% for item in kingdom_maps %}
+  {% set tab_id = 'kingdom-' ~ item.kingdom.id %}
+  <li class="nav-item" role="presentation">
+    <button class="nav-link {% if active_tab == tab_id %}active{% endif %}" id="{{ tab_id }}-tab" data-bs-toggle="pill" data-bs-target="#map-{{ tab_id }}" type="button" role="tab" aria-controls="map-{{ tab_id }}" aria-selected="{{ 'true' if active_tab == tab_id else 'false' }}">{{ item.kingdom.name }}</button>
+  </li>
+  {% endfor %}
+</ul>
+
+<div class="tab-content">
+  <section class="tab-pane fade {% if active_tab == 'empire' %}show active{% endif %}" id="map-empire" role="tabpanel" aria-labelledby="empire-tab" tabindex="0">
+    <div class="row g-4">
+      <div class="col-lg-8">
+        <div class="map-frame">
+          <img src="{{ url_for('static', filename=empire_map.image) }}" alt="Карта Империи Мирнастан">
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="card p-4">
+          <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+            <div>
+              <h2 class="h5 mb-1">{{ empire_map.title }}</h2>
+              <span class="badge text-bg-dark">общая карта</span>
+            </div>
+            {% if can_edit_empire %}
+            <span class="badge text-bg-success">редактирование</span>
+            {% endif %}
+          </div>
+          <p>{{ empire_map.notes }}</p>
+          {% if can_edit_empire %}
+          <form method="post" action="/maps/update" enctype="multipart/form-data" class="vstack gap-3">
+            <input type="hidden" name="scope" value="empire">
+            <div>
+              <label class="form-label" for="empireMapFile">Новая карта</label>
+              <input id="empireMapFile" class="form-control" type="file" name="map_file" accept=".jpg,.jpeg,.png,.webp">
+            </div>
+            <div>
+              <label class="form-label" for="empireMapNotes">Заметки</label>
+              <textarea id="empireMapNotes" class="form-control" name="map_notes" rows="5">{{ empire_map.notes }}</textarea>
+            </div>
+            <button class="btn btn-gold">Сохранить карту</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {% for item in kingdom_maps %}
+  {% set tab_id = 'kingdom-' ~ item.kingdom.id %}
+  <section class="tab-pane fade {% if active_tab == tab_id %}show active{% endif %}" id="map-{{ tab_id }}" role="tabpanel" aria-labelledby="{{ tab_id }}-tab" tabindex="0">
+    <div class="row g-4">
+      <div class="col-lg-8">
+        <div class="map-frame">
+          <img src="{{ url_for('static', filename=item.kingdom.map_image or 'maps/mirnastan.jpg') }}" alt="Карта провинции {{ item.kingdom.name }}">
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="card p-4">
+          <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+            <div>
+              <h2 class="h5 mb-1">{{ item.kingdom.name }}</h2>
+              <span class="badge text-bg-dark">провинция</span>
+            </div>
+            {% if item.can_edit %}
+            <span class="badge text-bg-success">редактирование</span>
+            {% endif %}
+          </div>
+          <p>{{ item.kingdom.map_notes or 'Заметки к карте пока не добавлены.' }}</p>
+          <dl class="row small mb-3">
+            <dt class="col-5">Бюджет</dt>
+            <dd class="col-7">{{ "{:,.0f}".format(item.kingdom.budget or 0) }}</dd>
+            <dt class="col-5">Доход</dt>
+            <dd class="col-7">{{ "{:,.0f}".format(item.kingdom.daily_income or 0) }}</dd>
+          </dl>
+          {% if item.can_edit %}
+          <form method="post" action="/maps/update" enctype="multipart/form-data" class="vstack gap-3">
+            <input type="hidden" name="scope" value="kingdom">
+            <input type="hidden" name="kingdom_id" value="{{ item.kingdom.id }}">
+            <div>
+              <label class="form-label" for="kingdomMapFile{{ item.kingdom.id }}">Новая карта</label>
+              <input id="kingdomMapFile{{ item.kingdom.id }}" class="form-control" type="file" name="map_file" accept=".jpg,.jpeg,.png,.webp">
+            </div>
+            <div>
+              <label class="form-label" for="kingdomMapNotes{{ item.kingdom.id }}">Заметки</label>
+              <textarea id="kingdomMapNotes{{ item.kingdom.id }}" class="form-control" name="map_notes" rows="5">{{ item.kingdom.map_notes or '' }}</textarea>
+            </div>
+            <button class="btn btn-gold">Сохранить карту</button>
+          </form>
+          {% else %}
+          <div class="soft-panel p-3 text-dark">Карту провинции меняет её король или император.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}
