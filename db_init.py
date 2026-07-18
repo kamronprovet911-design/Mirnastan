@@ -61,6 +61,18 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         posted INTEGER DEFAULT 0
     )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS cards (
+        id INTEGER PRIMARY KEY,
+        name TEXT,
+        description TEXT,
+        card_type TEXT,
+        rarity TEXT,
+        effect TEXT,
+        owner_id INTEGER,
+        for_trade INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (owner_id) REFERENCES users(id)
+    )''')
     ensure_column(conn, 'reports', 'report_type', 'TEXT')
     ensure_column(conn, 'reports', 'title', 'TEXT')
     ensure_column(conn, 'reports', 'author_name', 'TEXT')
@@ -69,6 +81,10 @@ def init_db():
     ensure_column(conn, 'users', 'balance', 'REAL DEFAULT 0')
     ensure_column(conn, 'users', 'daily_income', 'REAL DEFAULT 0')
     ensure_column(conn, 'kingdoms', 'daily_income', 'REAL DEFAULT 0')
+    ensure_column(conn, 'kingdoms', 'map_image', 'TEXT')
+    ensure_column(conn, 'kingdoms', 'map_notes', 'TEXT')
+    ensure_column(conn, 'settings', 'empire_map_image', 'TEXT')
+    ensure_column(conn, 'settings', 'empire_map_notes', 'TEXT')
     conn.commit()
 
     # Seed kingdoms with starting budgets

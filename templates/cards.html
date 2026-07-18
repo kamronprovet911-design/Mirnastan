@@ -1,0 +1,148 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+  <div>
+    <h1 class="h3 mb-1">Карты Империи</h1>
+    <p class="mb-0 text-light">Создавайте, коллекционируйте и обменивайтесь картами между игроками.</p>
+  </div>
+</div>
+
+<ul class="nav nav-pills app-tabs mb-3" id="cardsTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="mycards-tab" data-bs-toggle="pill" data-bs-target="#cards-mycards" type="button" role="tab" aria-controls="cards-mycards" aria-selected="true">Мои карты</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="trade-tab" data-bs-toggle="pill" data-bs-target="#cards-trade" type="button" role="tab" aria-controls="cards-trade" aria-selected="false">Рынок обмена</button>
+  </li>
+  {% if session.user.role in ['emperor','king'] %}
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="create-tab" data-bs-toggle="pill" data-bs-target="#cards-create" type="button" role="tab" aria-controls="cards-create" aria-selected="false">Создать карту</button>
+  </li>
+  {% endif %}
+</ul>
+
+<div class="tab-content">
+  <section class="tab-pane fade show active" id="cards-mycards" role="tabpanel" aria-labelledby="mycards-tab" tabindex="0">
+    <div class="card p-4">
+      <h4 class="mb-3">Мои карты</h4>
+      {% if my_cards %}
+      <div class="row g-3">
+        {% for card in my_cards %}
+        <div class="col-md-6 col-lg-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <h5 class="card-title mb-0">{{ card.name }}</h5>
+                <span class="badge {% if card.rarity == 'legendary' %}text-bg-warning{% elif card.rarity == 'rare' %}text-bg-info{% elif card.rarity == 'epic' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ card.rarity }}</span>
+              </div>
+              <p class="card-text small text-muted mb-2">{{ card.description }}</p>
+              <p class="card-text small"><strong>Тип:</strong> {{ card.card_type }}</p>
+              {% if card.effect %}
+              <p class="card-text small"><strong>Эффект:</strong> {{ card.effect }}</p>
+              {% endif %}
+              <div class="mt-3">
+                {% if card.for_trade %}
+                <span class="badge text-bg-success">На обмене</span>
+                {% else %}
+                <span class="badge text-bg-secondary">В коллекции</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="card-footer bg-transparent border-top-0">
+              <form method="post" action="/cards/toggle_trade/{{ card.id }}">
+                <button class="btn btn-sm {% if card.for_trade %}btn-outline-secondary{% else %}btn-outline-success{% endif %} w-100">
+                  {% if card.for_trade %}Снять с обмена{% else %}Поставить на обмен{% endif %}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-muted">У вас пока нет карт. Создайте новую карту или найдите на рынке обмена.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="tab-pane fade" id="cards-trade" role="tabpanel" aria-labelledby="trade-tab" tabindex="0">
+    <div class="card p-4">
+      <h4 class="mb-3">Рынок обмена</h4>
+      <p class="text-muted small mb-3">Здесь отображаются карты, доступные для обмена от других игроков.</p>
+      {% if trade_cards %}
+      <div class="row g-3">
+        {% for card in trade_cards %}
+        <div class="col-md-6 col-lg-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <h5 class="card-title mb-0">{{ card.name }}</h5>
+                <span class="badge {% if card.rarity == 'legendary' %}text-bg-warning{% elif card.rarity == 'rare' %}text-bg-info{% elif card.rarity == 'epic' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ card.rarity }}</span>
+              </div>
+              <p class="card-text small text-muted mb-2">{{ card.description }}</p>
+              <p class="card-text small"><strong>Владелец:</strong> {{ card.owner_name }}</p>
+              <p class="card-text small"><strong>Тип:</strong> {{ card.card_type }}</p>
+              {% if card.effect %}
+              <p class="card-text small"><strong>Эффект:</strong> {{ card.effect }}</p>
+              {% endif %}
+            </div>
+            <div class="card-footer bg-transparent border-top-0">
+              <form method="post" action="/cards/exchange/{{ card.id }}">
+                <button class="btn btn-sm btn-gold w-100">Обменять</button>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-muted">На рынке обмена пока нет карт.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if session.user.role in ['emperor','king'] %}
+  <section class="tab-pane fade" id="cards-create" role="tabpanel" aria-labelledby="create-tab" tabindex="0">
+    <div class="card p-4">
+      <h4 class="mb-3">Создать новую карту</h4>
+      <form method="post" action="/cards/create">
+        <div class="mb-3">
+          <label class="form-label" for="cardName">Название карты</label>
+          <input id="cardName" class="form-control" type="text" name="name" required placeholder="Например: Золотой меч">
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="cardDescription">Описание</label>
+          <textarea id="cardDescription" class="form-control" name="description" rows="3" placeholder="Описание карты..."></textarea>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label" for="cardType">Тип</label>
+            <select id="cardType" class="form-select" name="card_type">
+              <option value="action">Действие</option>
+              <option value="resource">Ресурс</option>
+              <option value="character">Персонаж</option>
+              <option value="event">Событие</option>
+              <option value="building">Здание</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" for="cardRarity">Редкость</label>
+            <select id="cardRarity" class="form-select" name="rarity">
+              <option value="common">Обычная</option>
+              <option value="rare">Редкая</option>
+              <option value="epic">Эпическая</option>
+              <option value="legendary">Легендарная</option>
+            </select>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="cardEffect">Эффект (опционально)</label>
+          <textarea id="cardEffect" class="form-control" name="effect" rows="2" placeholder="Игровой эффект карты..."></textarea>
+        </div>
+        <button class="btn btn-gold">Создать карту</button>
+      </form>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

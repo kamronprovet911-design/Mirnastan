@@ -2,6 +2,7 @@ import sqlite3
 import os
 from flask import Flask, g, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -418,6 +419,180 @@ def submit_report():
 def reports():
     reports = query_db('SELECT r.*, k.name as kingdom_name FROM reports r JOIN kingdoms k ON r.kingdom_id=k.id ORDER BY r.created_at DESC')
     return render_template('reports.html', reports=reports)
+
+@app.route('/maps')
+@login_required
+def maps():
+    user = session.get('user', {})
+    active_tab = request.args.get('tab', 'empire')
+    
+    kingdoms = query_db('SELECT * FROM kingdoms')
+    
+    empire_map_image = query_db("SELECT value FROM settings WHERE key='empire_map_image'", one=True)
+    empire_map_notes = query_db("SELECT value FROM settings WHERE key='empire_map_notes'", one=True)
+    
+    empire_map = {
+        'image': empire_map_image['value'] if empire_map_image and empire_map_image['value'] else 'maps/mirnastan.jpg',
+        'title': 'Империя Мирнастан',
+        'notes': empire_map_notes['value'] if empire_map_notes and empire_map_notes['value'] else 'Общая карта империи с тремя провинциями: Астерион, Нердия и Мирноуль.'
+    }
+    
+    can_edit_empire = user.get('role') == 'emperor'
+    
+    kingdom_maps = []
+    for k in kingdoms:
+        can_edit = user.get('role') == 'emperor' or user_can_manage_kingdom(user, k['id'])
+        kingdom_maps.append({
+            'kingdom': k,
+            'can_edit': can_edit
+        })
+    
+    return render_template('maps.html', 
+                          empire_map=empire_map, 
+                          kingdom_maps=kingdom_maps, 
+                          can_edit_empire=can_edit_empire,
+                          active_tab=active_tab)
+
+@app.route('/maps/update', methods=['POST'])
+@login_required
+def maps_update():
+    user = session.get('user', {})
+    scope = request.form.get('scope')
+    
+    if scope == 'empire' and user.get('role') != 'emperor':
+        flash('Только император может менять карту империи')
+        return redirect(url_for('maps'))
+    
+    if scope == 'kingdom':
+        kingdom_id = request.form.get('kingdom_id')
+        if user.get('role') != 'emperor' and not user_can_manage_kingdom(user, kingdom_id):
+            flash('Вы можете менять только карту своего королевства')
+            return redirect(url_for('maps'))
+    
+    db = get_db()
+    
+    if 'map_file' in request.files:
+        file = request.files['map_file']
+        if file and file.filename:
+            filename = secure_filename(file.filename)
+            upload_folder = os.path.join(app.static_folder, 'maps')
+            os.makedirs(upload_folder, exist_ok=True)
+            filepath = os.path.join(upload_folder, filename)
+            file.save(filepath)
+            
+            if scope == 'empire':
+                db.execute("UPDATE settings SET value=? WHERE key='empire_map_image'", (f'maps/{filename}',))
+            elif scope == 'kingdom':
+                kingdom_id = request.form.get('kingdom_id')
+                db.execute("UPDATE kingdoms SET map_image=? WHERE id=?", (f'maps/{filename}', kingdom_id))
+    
+    map_notes = request.form.get('map_notes', '')
+    if scope == 'empire':
+        db.execute("UPDATE settings SET value=? WHERE key='empire_map_notes'", (map_notes,))
+    elif scope == 'kingdom':
+        kingdom_id = request.form.get('kingdom_id')
+        db.execute("UPDATE kingdoms SET map_notes=? WHERE id=?", (map_notes, kingdom_id))
+    
+    db.commit()
+    flash('Карта обновлена')
+    return redirect(url_for('maps'))
+
+@app.route('/cards')
+@login_required
+def cards():
+    user = session.get('user', {})
+    db = get_db()
+    
+    user_id = db.execute('SELECT id FROM users WHERE username=?', (user.get('username'),)).fetchone()
+    user_id = user_id[0] if user_id else None
+    
+    my_cards = query_db('SELECT * FROM cards WHERE owner_id=?', (user_id,)) if user_id else []
+    trade_cards = query_db('SELECT c.*, u.username as owner_name FROM cards c JOIN users u ON c.owner_id=u.id WHERE c.for_trade=1')
+    
+    return render_template('cards.html', my_cards=my_cards, trade_cards=trade_cards)
+
+@app.route('/cards/create', methods=['POST'])
+@login_required
+def cards_create():
+    user = session.get('user', {})
+    if user.get('role') not in ['emperor', 'king']:
+        flash('Только император и короли могут создавать карты')
+        return redirect(url_for('cards'))
+    
+    db = get_db()
+    user_id = db.execute('SELECT id FROM users WHERE username=?', (user.get('username'),)).fetchone()
+    user_id = user_id[0] if user_id else None
+    
+    name = request.form.get('name', '')
+    description = request.form.get('description', '')
+    card_type = request.form.get('card_type', 'action')
+    rarity = request.form.get('rarity', 'common')
+    effect = request.form.get('effect', '')
+    
+    if name:
+        db.execute('INSERT INTO cards (name, description, card_type, rarity, effect, owner_id) VALUES (?,?,?,?,?,?)',
+                   (name, description, card_type, rarity, effect, user_id))
+        db.commit()
+        flash('Карта создана')
+    
+    return redirect(url_for('cards'))
+
+@app.route('/cards/toggle_trade/<int:card_id>', methods=['POST'])
+@login_required
+def cards_toggle_trade(card_id):
+    user = session.get('user', {})
+    db = get_db()
+    
+    card = query_db('SELECT * FROM cards WHERE id=?', (card_id,), one=True)
+    if not card:
+        flash('Карта не найдена')
+        return redirect(url_for('cards'))
+    
+    user_id = db.execute('SELECT id FROM users WHERE username=?', (user.get('username'),)).fetchone()
+    user_id = user_id[0] if user_id else None
+    
+    if card['owner_id'] != user_id:
+        flash('Это не ваша карта')
+        return redirect(url_for('cards'))
+    
+    new_trade_status = 0 if card['for_trade'] else 1
+    db.execute('UPDATE cards SET for_trade=? WHERE id=?', (new_trade_status, card_id))
+    db.commit()
+    flash('Статус обмена изменён')
+    return redirect(url_for('cards'))
+
+@app.route('/cards/exchange/<int:card_id>', methods=['POST'])
+@login_required
+def cards_exchange(card_id):
+    user = session.get('user', {})
+    db = get_db()
+    
+    card = query_db('SELECT * FROM cards WHERE id=?', (card_id,), one=True)
+    if not card or not card['for_trade']:
+        flash('Карта недоступна для обмена')
+        return redirect(url_for('cards'))
+    
+    user_id = db.execute('SELECT id FROM users WHERE username=?', (user.get('username'),)).fetchone()
+    user_id = user_id[0] if user_id else None
+    
+    if card['owner_id'] == user_id:
+        flash('Нельзя обменять свою же карту')
+        return redirect(url_for('cards'))
+    
+    db.execute('UPDATE cards SET owner_id=?, for_trade=0 WHERE id=?', (user_id, card_id))
+    db.commit()
+    
+    author_name = user.get('username') or 'Игрок'
+    recipient_row = db.execute('SELECT username FROM users WHERE id=?', (card['owner_id'],)).fetchone()
+    recipient_name = recipient_row[0] if recipient_row else 'Неизвестно'
+    
+    db.execute('INSERT INTO reports (kingdom_id, report_type, amount, title, description, author_name, recipient_name, nickname) VALUES (?,?,?,?,?,?,?,?)',
+               (None, 'Обмен карт', 0, f'Обмен карты: {card["name"]}', f'Карта "{card["name"]}" ({card["rarity"]}) обменена от {recipient_name} к {author_name}', author_name, recipient_name, f'Карта: {card["name"]}'))
+    db.commit()
+    send_report_to_telegram()
+    
+    flash('Карта получена!')
+    return redirect(url_for('cards'))
 
 if __name__=='__main__':
     import os
