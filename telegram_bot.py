@@ -45,21 +45,66 @@ def process_pending_reports():
         report_type = r['report_type'] or 'Другое'
         author = r['author_name'] or 'Не указано'
         recipient = r['recipient_name'] or 'Не указано'
-        nickname = f"\\n👤 <i>{r['nickname']}</i>" if r['nickname'] else ''
-        amount_text = f"\\n💰 <b>Сумма:</b> {r['amount']}" if r['amount'] not in (None, '', 0) else ''
+        kingdom = r['kingdom'] or 'Империя'
         
-        # Format description with line breaks for better readability
-        description = r['description'] or 'Нет описания'
-        
+        # Формируем красивый заголовок в зависимости от типа отчета
+        if report_type == 'Ресурсный доход':
+            header_emoji = '📢'
+            header_text = 'НОВОЕ НАЗНАЧЕНИЕ ОТ ИМПЕРАТОРА'
+            details_label = 'Утвержденные ресурсы (в неделю):'
+            
+            # Парсим описание для красивого вывода ресурсов
+            desc_text = r['description'] or 'Нет описания'
+            formatted_desc = f"Назначен постоянный ресурсный доход для развития земель.\n\n{details_label}"
+            
+            # Пытаемся выделить цифры из описания для красивого формата
+            if 'дерево=' in desc_text or 'металл=' in desc_text or 'продовольствие=' in desc_text:
+                parts = []
+                if 'дерево=' in desc_text:
+                    val = desc_text.split('дерево=')[1].split(',')[0].replace('0.0', '0').strip()
+                    parts.append(f"🌲 Дерево: <b>{val}</b>")
+                if 'металл=' in desc_text:
+                    val = desc_text.split('металл=')[1].split(',')[0].replace('0.0', '0').strip()
+                    parts.append(f"⛓️ Металл: <b>{val}</b>")
+                if 'продовольствие=' in desc_text:
+                    val = desc_text.split('продовольствие=')[1].split('.')[0].strip()
+                    parts.append(f"🍞 Продовольствие: <b>{val}</b>")
+                if parts:
+                    formatted_desc += "\n" + "\n".join(parts)
+                formatted_desc += "\n\n✅ <i>Указ вступил в силу.</i>"
+            else:
+                formatted_desc += f"\n{desc_text}"
+                
+        elif report_type == 'Выплата сюзереном':
+            header_emoji = '💰'
+            header_text = 'ВЫПЛАТА ОТ СЮЗЕРЕНА'
+            formatted_desc = f"Поступило финансирование из казны сюзерена.\n\n💵 <b>Сумма:</b> {r['amount']}\n✅ <i>Средства зачислены.</i>"
+            
+        elif report_type == 'Постройка':
+            header_emoji = '🏗️'
+            header_text = 'СТАТУС ПОСТРОЙКИ'
+            formatted_desc = f"{r['description'] or 'Обновление статуса постройки'}"
+            
+        else:
+            header_emoji = '📌'
+            header_text = 'НОВЫЙ ОТЧЁТ'
+            formatted_desc = r['description'] or 'Нет описания'
+
+        # Собираем основное сообщение
         text = (
-            f"📌 <b>Новый отчёт</b>\\n\\n"
-            f"🏰 <b>Королевство:</b> {r['kingdom'] or 'Империя'}\\n"
-            f"🧾 <b>Тип:</b> {report_type}\\n"
-            f"📝 <b>Заголовок:</b> {title}\\n"
-            f"👤 <b>От кого:</b> {author}{nickname}\\n"
-            f"🎯 <b>Кому:</b> {recipient}{amount_text}\\n\\n"
-            f"💬 <b>Подробности:</b>\\n{description}"
+            f"{header_emoji} <b>{header_text}</b>\n\n"
+            f"🏰 <b>Королевство:</b> {kingdom}\n"
+            f"👤 <b>Инициатор:</b> {author}\n"
         )
+        
+        if r['nickname']:
+            text += f"📝 <i>({r['nickname']})</i>\n"
+            
+        if r['amount'] and r['amount'] not in ('', 0, None) and report_type != 'Ресурсный доход':
+            text += f"💰 <b>Сумма:</b> {r['amount']}\n"
+            
+        text += f"\n📜 <b>Подробности:</b>\n{formatted_desc}"
+
         thread = THREAD_MAP.get(r['kingdom'])
         ok = post_message(CHAT_ID, text, thread_id=thread)
         if ok:
