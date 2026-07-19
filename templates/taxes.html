@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container py-4">
+  <div class="row justify-content-center">
+    <div class="col-lg-8">
+      <div class="card p-4">
+        <h2 class="mb-4 text-center">💰 Налоги Королевства</h2>
+        
+        <div class="alert alert-info mb-4">
+          <strong>Правила налогообложения:</strong><br>
+          • Каждый король платит 20% от своего ежедневного дохода императору<br>
+          • Налог автоматически списывается в 00:01<br>
+          • Если средств недостаточно, необходимо оплатить вручную
+        </div>
+        
+        <div class="row g-4 mb-4">
+          <div class="col-md-6">
+            <div class="card bg-dark text-light p-3">
+              <h5 class="mb-2">Ваш баланс</h5>
+              <p class="h3 text-gold">{{ "{:,.0f}".format(current_balance) }} Мир</p>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card bg-dark text-light p-3">
+              <h5 class="mb-2">Ежедневный доход</h5>
+              <p class="h3 text-gold">{{ "{:,.0f}".format(king['daily_income'] or 0) }} Мир</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card border-warning mb-4">
+          <div class="card-header bg-warning text-dark">
+            <h4 class="mb-0">📋 Налог к оплате</h4>
+          </div>
+          <div class="card-body">
+            <div class="row g-3 align-items-center">
+              <div class="col-md-6">
+                <p class="mb-1"><strong>Сумма налога (20%):</strong></p>
+                <p class="h4 text-danger">{{ "{:,.2f}".format(tax_amount) }} Мир</p>
+              </div>
+              <div class="col-md-6">
+                {% if already_paid %}
+                  <div class="alert alert-success mb-0">
+                    ✅ <strong>Налог уже оплачен сегодня!</strong>
+                  </div>
+                {% elif current_balance >= tax_amount %}
+                  <form method="post" action="/taxes/pay">
+                    <button type="submit" class="btn btn-gold w-100">
+                      💰 Заплатить налог
+                    </button>
+                  </form>
+                {% else %}
+                  <div class="alert alert-danger mb-0">
+                    ⚠️ <strong>Недостаточно средств!</strong><br>
+                    Требуется: {{ "{:,.2f}".format(tax_amount) }} Мир<br>
+                    Доступно: {{ "{:,.2f}".format(current_balance) }} Мир<br>
+                    Дефицит: {{ "{:,.2f}".format(tax_amount - current_balance) }} Мир
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="text-center">
+          <a href="/dashboard" class="btn btn-outline-light">← Вернуться на панель</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .text-gold { color: #d9a441; }
+</style>
+{% endblock %}
