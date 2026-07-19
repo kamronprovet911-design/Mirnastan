@@ -2306,17 +2306,21 @@ def taxes_page():
     db = get_db()
     king = db.execute('SELECT * FROM users WHERE id=?', (user['id'],)).fetchone()
     
+    if not king:
+        flash('Пользователь не найден')
+        return redirect(url_for('dashboard'))
+    
     # Calculate tax debt (20% of daily income)
     daily_income = float(king['daily_income'] or 0)
     tax_amount = daily_income * 0.20
     current_balance = float(king['balance'] or 0)
-    tax_paid_today = bool(king['tax_paid_today'])
+    tax_paid_today = bool(king['tax_paid_today'] or 0)
     
     # Check if already paid today
     already_paid = tax_paid_today
     
     return render_template('taxes.html', 
-                          king=king,
+                          king=dict(king),
                           tax_amount=tax_amount,
                           current_balance=current_balance,
                           already_paid=already_paid)
@@ -2332,6 +2336,10 @@ def pay_taxes():
     
     db = get_db()
     king = db.execute('SELECT * FROM users WHERE id=?', (user['id'],)).fetchone()
+    
+    if not king:
+        flash('Пользователь не найден')
+        return redirect(url_for('dashboard'))
     
     daily_income = float(king['daily_income'] or 0)
     tax_amount = daily_income * 0.20
