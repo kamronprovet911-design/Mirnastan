@@ -32,7 +32,13 @@ def process_pending_reports():
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute('SELECT r.id, r.amount, r.description, r.title, r.report_type, r.author_name, r.recipient_name, r.nickname, k.name as kingdom FROM reports r JOIN kingdoms k ON r.kingdom_id=k.id WHERE posted=0')
+    c.execute('''SELECT
+                    r.id, r.amount, r.description, r.title, r.report_type,
+                    r.author_name, r.recipient_name, r.nickname,
+                    k.name as kingdom
+                FROM reports r
+                LEFT JOIN kingdoms k ON r.kingdom_id=k.id
+                WHERE posted=0''')
     rows = c.fetchall()
     for r in rows:
         title = r['title'] or 'Без заголовка'

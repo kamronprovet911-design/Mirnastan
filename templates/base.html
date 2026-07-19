@@ -103,6 +103,7 @@
       }
 
       .map-frame {
+        position: relative;
         overflow: hidden;
         border-radius: 8px;
         background: #0d1416;
@@ -112,6 +113,30 @@
         display: block;
         width: 100%;
         height: auto;
+      }
+
+      .map-pin {
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        background: var(--gold-bright);
+        border: 2px solid #1c1408;
+        box-shadow: 0 0 0 3px rgba(241, 193, 91, .3);
+      }
+
+      .map-pin span {
+        position: absolute;
+        left: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        padding: .1rem .35rem;
+        border-radius: 6px;
+        color: #f7efe0;
+        background: rgba(8, 11, 13, .78);
+        white-space: nowrap;
+        font-size: .75rem;
       }
 
       .stat-tile {
@@ -157,6 +182,9 @@
             <li class="nav-item"><a class="nav-link" href="/dashboard">Панель</a></li>
             <li class="nav-item"><a class="nav-link" href="/maps">Карты</a></li>
             <li class="nav-item"><a class="nav-link" href="/cards">Карточки</a></li>
+            {% if session.user.role in ['emperor','king'] %}
+            <li class="nav-item"><a class="nav-link" href="/counties">Графства</a></li>
+            {% endif %}
             {% if session.user.role in ['emperor','king'] %}
             <li class="nav-item"><a class="nav-link" href="/income">Доходы</a></li>
             {% endif %}

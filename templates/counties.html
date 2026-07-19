@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+  <div>
+    <h1 class="h3 mb-1">Графства</h1>
+    <p class="mb-0 text-light">Города и рубежи на картах, закреплённые за графами.</p>
+  </div>
+  <a class="btn btn-outline-light" href="/maps">Карты</a>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    {% for kingdom_name, items in counties|groupby('kingdom_name') %}
+    <div class="card p-4 mb-4">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h2 class="h4 mb-0">{{ kingdom_name }}</h2>
+        <span class="badge text-bg-dark">{{ items|length }} графств</span>
+      </div>
+      <div class="row g-3">
+        {% for county in items %}
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                <div>
+                  <h3 class="h5 mb-1">{{ county.name }}</h3>
+                  <div class="text-muted small">{{ county.map_hint }}</div>
+                </div>
+                <span class="badge text-bg-secondary">{{ county.map_x|round|int }} / {{ county.map_y|round|int }}</span>
+              </div>
+              <p class="mb-1"><strong>Граф:</strong> {{ county.graf_username or 'не назначен' }}</p>
+              <p class="mb-3"><strong>Доход:</strong> {{ "{:,.0f}".format(county.graf_daily_income or 0) }} Мир</p>
+
+              <form method="post" action="/counties/income" class="mb-3">
+                <input type="hidden" name="county_id" value="{{ county.id }}">
+                <label class="form-label small">Доход графа</label>
+                <div class="input-group input-group-sm">
+                  <input name="amount" type="number" min="0" step="0.01" value="{{ county.graf_daily_income or 0 }}" class="form-control">
+                  <button class="btn btn-outline-success">Сохранить</button>
+                </div>
+              </form>
+
+              <form method="post" action="/counties/password">
+                <input type="hidden" name="county_id" value="{{ county.id }}">
+                <label class="form-label small">Пароль графа</label>
+                <div class="input-group input-group-sm">
+                  <input name="new_password" class="form-control" placeholder="пусто = сгенерировать">
+                  <button class="btn btn-outline-dark">Сменить</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <div class="card p-4">
+      <p class="mb-0 text-muted">Графства пока не созданы.</p>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card p-4 mb-4">
+      <h2 class="h5 mb-3">Доступ графов</h2>
+      <p class="text-muted small mb-0">Стартовый пароль нового графа: <code>логин_pass</code>. После смены новый пароль показывается один раз во всплывающем сообщении.</p>
+    </div>
+
+    {% if session.user.role == 'emperor' %}
+    <div class="card p-4">
+      <h2 class="h5 mb-3">Пароли королей</h2>
+      <form method="post" action="/kings/password" class="vstack gap-3">
+        <div>
+          <label class="form-label">Король</label>
+          <select name="user_id" class="form-select" required>
+            {% for king in king_users %}
+            <option value="{{ king.id }}">{{ king.username }}{% if king.kingdom_name %} · {{ king.kingdom_name }}{% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Новый пароль</label>
+          <input name="new_password" class="form-control" placeholder="пусто = сгенерировать">
+        </div>
+        <button class="btn btn-gold">Сменить пароль</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

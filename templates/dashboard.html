@@ -51,12 +51,21 @@
             <a class="btn btn-gold" href="/submit_report">Отправить новый отчёт</a>
             {% if session.user.role in ['emperor','king'] %}
             <a class="btn btn-outline-success" href="/income">Настроить ежедневные доходы</a>
+            <a class="btn btn-outline-primary" href="/counties">Графства и пароли</a>
             {% endif %}
             {% if session.user.role=='emperor' %}
             <a class="btn btn-outline-secondary" href="/council">Совет Императора</a>
             {% endif %}
             <a class="btn btn-outline-info" href="/maps">Просмотреть карты</a>
-            <a class="btn btn-outline-warning" href="/cards">Карточки</a>
+            <a class="btn btn-outline-dark" href="/resources">Ресурсы</a>
+            {% if session.user.role == 'emperor' %}
+            <a class="btn btn-outline-dark" href="/resource_income">Ресурсный доход</a>
+            {% endif %}
+            <a class="btn btn-outline-primary" href="/passwords">Пароли</a>
+
+            <a class="btn btn-outline-success" href="/build_requests">Постройки</a>
+
+
           </div>
         </div>
       </div>

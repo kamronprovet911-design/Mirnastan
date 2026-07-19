@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-12">
+    <div class="card p-4">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div>
+          <h1 class="h3 mb-1">Заявки на постройки</h1>
+          <p class="mb-0 text-light">Граф/король подают запрос, император одобряет.</p>
+        </div>
+        <a class="btn btn-outline-info" href="/dashboard">Назад</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card p-4">
+      <h2 class="h5 mb-3">Подать заявку</h2>
+
+      {% if can_submit %}
+      <form method="post" action="/build_requests/submit" class="vstack gap-3">
+        <div>
+          <label class="form-label small">Графство</label>
+          <select name="county_id" class="form-select form-select-sm" required>
+            {% for c in my_counties %}
+            <option value="{{ c.id }}">{{ c.name }} · {{ c.kingdom_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label class="form-label small">Что строим</label>
+          <input name="item_name" class="form-control form-control-sm" placeholder="например: Мельница">
+        </div>
+
+        <div class="row g-2">
+          <div class="col-md-4">
+            <label class="form-label small">Дерево (стоимость)</label>
+            <input name="requested_tree_cost" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">Металл (стоимость)</label>
+            <input name="requested_metal_cost" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">Еда (стоимость)</label>
+            <input name="requested_food_cost" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
+          </div>
+        </div>
+
+        <div>
+          <label class="form-label small">Оплата деньгами королевства</label>
+          <input name="requested_kingdom_cash_cost" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
+        </div>
+
+        <div>
+          <label class="form-label small">Покрытие казной императора (доля)</label>
+          <input name="treasury_cash_covered" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
+        </div>
+
+        <div class="row g-2">
+          <div class="col-md-4">
+            <label class="form-label small">Ежедневный доход: Дерево</label>
+            <input name="proposed_tree_income" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">Ежедневный доход: Металл</label>
+            <input name="proposed_metal_income" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">Ежедневный доход: Еда</label>
+            <input name="proposed_food_income" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
+          </div>
+        </div>
+
+        <div>
+          <label class="form-label small">Причина (описание)</label>
+          <textarea name="reason" class="form-control form-control-sm" rows="3" placeholder="почему нужна постройка"></textarea>
+        </div>
+
+        <button class="btn btn-gold">Отправить заявку</button>
+      </form>
+      {% else %}
+      <p class="text-muted">У вас нет прав на подачу заявок.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card p-4">
+      <h2 class="h5 mb-3">Очередь заявок</h2>
+      {% if building_requests %}
+      <div class="vstack gap-3">
+        {% for r in building_requests %}
+        <div class="soft-panel p-3 text-dark">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div>
+              <div class="fw-bold">{{ r.item_name }}</div>
+              <div class="text-muted small">Графство: {{ r.county_name }} · Королевство: {{ r.kingdom_name }}</div>
+              <div class="small">Стоимость: D={{ r.requested_tree_cost }}; M={{ r.requested_metal_cost }}; P={{ r.requested_food_cost }}</div>
+              <div class="small">Деньги: королевство={{ r.kingdom_cash_cost }}; казна={{ r.treasury_cash_covered }}</div>
+              <div class="small">Предложенный доход: D+{{ r.proposed_tree_income }}; M+{{ r.proposed_metal_income }}; P+{{ r.proposed_food_income }}</div>
+              <div class="small text-muted">Статус: {{ r.status }}</div>
+            </div>
+          </div>
+
+          {% if can_approve and r.status == 'submitted' %}
+          <hr>
+          <form method="post" action="/build_requests/approve" class="vstack gap-2">
+            <input type="hidden" name="request_id" value="{{ r.id }}">
+            <div class="row g-2">
+              <div class="col-md-4">
+                <label class="form-label small">Доход D</label>
+                <input name="proposed_tree_income" type="number" min="0" step="0.01" value="{{ r.proposed_tree_income }}" class="form-control form-control-sm" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small">Доход M</label>
+                <input name="proposed_metal_income" type="number" min="0" step="0.01" value="{{ r.proposed_metal_income }}" class="form-control form-control-sm" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small">Доход P</label>
+                <input name="proposed_food_income" type="number" min="0" step="0.01" value="{{ r.proposed_food_income }}" class="form-control form-control-sm" required>
+              </div>
+            </div>
+            <input name="reason" class="form-control form-control-sm" placeholder="Причина/заметка императора">
+            <button class="btn btn-outline-success">Одобрить</button>
+          </form>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-muted">Заявок пока нет.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+

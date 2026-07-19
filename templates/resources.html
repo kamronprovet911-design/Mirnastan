@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-12">
+    <div class="card p-4">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div>
+          <h1 class="h3 mb-1">Ресурсы (Д/М/П)</h1>
+          <p class="mb-0 text-light">Перевод ресурсов между королевствами. Постройки оформляются через заявки.</p>
+        </div>
+        <a class="btn btn-outline-info" href="/dashboard">Назад</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card p-4">
+      <h2 class="h5 mb-3">Перевод ресурсов</h2>
+      <form method="post" action="/resources/transfer" class="vstack gap-3">
+        <div class="row g-2">
+          <div class="col-md-6">
+            <label class="form-label small">Откуда</label>
+            <select name="from_kingdom_id" class="form-select form-select-sm" required>
+              {% for k in kingdoms %}
+              <option value="{{ k.id }}">{{ k.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">Куда</label>
+            <select name="to_kingdom_id" class="form-select form-select-sm" required>
+              {% for k in kingdoms %}
+              <option value="{{ k.id }}">{{ k.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="row g-2">
+          <div class="col-md-4">
+            <label class="form-label small">Дерево</label>
+            <input name="tree_amount" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">Металл</label>
+            <input name="metal_amount" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">Продовольствие</label>
+            <input name="food_amount" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
+          </div>
+        </div>
+
+        <div>
+          <label class="form-label small">Причина</label>
+          <input name="description" class="form-control form-control-sm" placeholder="например: обмен на стройматериалы">
+        </div>
+
+        <button class="btn btn-gold">Перевести</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card p-4">
+      <h2 class="h5 mb-3">Текущие балансы</h2>
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead><tr><th>Королевство</th><th>Д</th><th>М</th><th>П</th></tr></thead>
+          <tbody>
+            {% for k in kingdoms %}
+            <tr>
+              <td><strong>{{ k.name }}</strong></td>
+              <td>{{ k.tree or 0 }}</td>
+              <td>{{ k.metal or 0 }}</td>
+              <td>{{ k.food or 0 }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+

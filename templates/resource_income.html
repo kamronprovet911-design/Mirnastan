@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-12">
+    <div class="card p-4">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div>
+          <h1 class="h3 mb-1">Ресурсный доход (Д/М/П)</h1>
+          <p class="mb-0 text-light">Император задаёт ежедневный доход королевствам в натуральных единицах. Оплата за ресурсы не требуется.</p>
+        </div>
+        <a class="btn btn-outline-dark" href="/dashboard">Назад</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card p-4" style="color:black;">
+      <h2 class="h5 mb-3">Доходы по королевствам</h2>
+
+      <form method="post" action="/resource_income" class="vstack gap-4">
+        <input type="hidden" name="__action" value="update">
+
+        {% for k in kingdoms %}
+        <div class="border rounded p-3">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+            <div>
+              <strong>{{ k.name }}</strong>
+            </div>
+            <div class="text-muted small">
+              Баланс ресурсов: Д={{ k.tree or 0 }}, М={{ k.metal or 0 }}, П={{ k.food or 0 }}
+            </div>
+          </div>
+
+          <div class="row g-2">
+            <div class="col-md-4">
+              <label class="form-label small">Доход дерева (Д)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                name="tree_income__{{ k.id }}"
+                value="{{ k.tree_income or 0 }}"
+                class="form-control form-control-sm"
+              >
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Доход металла (М)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                name="metal_income__{{ k.id }}"
+                value="{{ k.metal_income or 0 }}"
+                class="form-control form-control-sm"
+              >
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Доход продовольствия (П)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                name="food_income__{{ k.id }}"
+                value="{{ k.food_income or 0 }}"
+                class="form-control form-control-sm"
+              >
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+
+        <div class="d-flex justify-content-end">
+          <button class="btn btn-gold">Сохранить доходы</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

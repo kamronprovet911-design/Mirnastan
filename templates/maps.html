@@ -66,6 +66,11 @@
       <div class="col-lg-8">
         <div class="map-frame">
           <img src="{{ url_for('static', filename=item.kingdom.map_image or 'maps/mirnastan.jpg') }}" alt="Карта провинции {{ item.kingdom.name }}">
+          {% for county in item.counties %}
+          <div class="map-pin" style="left: {{ county.map_x }}%; top: {{ county.map_y }}%;">
+            <span>{{ county.name }}</span>
+          </div>
+          {% endfor %}
         </div>
       </div>
       <div class="col-lg-4">
@@ -86,6 +91,19 @@
             <dt class="col-5">Доход</dt>
             <dd class="col-7">{{ "{:,.0f}".format(item.kingdom.daily_income or 0) }}</dd>
           </dl>
+          {% if item.counties %}
+          <div class="mb-3">
+            <h3 class="h6">Графства</h3>
+            <div class="vstack gap-2">
+              {% for county in item.counties %}
+              <div class="d-flex justify-content-between gap-2 small">
+                <span>{{ county.name }}</span>
+                <span class="text-muted">{{ county.graf_username }}</span>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
           {% if item.can_edit %}
           <form method="post" action="/maps/update" enctype="multipart/form-data" class="vstack gap-3">
             <input type="hidden" name="scope" value="kingdom">
