@@ -248,6 +248,9 @@ def seed_runtime_defaults(db):
     ensure_setting(db, 'empire_map_image', 'maps/mirnastan.jpg')
     ensure_setting(db, 'empire_map_notes', 'Общая карта империи с тремя провинциями: Астерион, Нердия и Мирноуль.')
 
+    # Reset all grafs' balance to 0
+    db.execute("UPDATE users SET balance = 0 WHERE role = 'graf'")
+
     for username, role in DEFAULT_USERS:
         existing = db.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone()
         if existing is None:

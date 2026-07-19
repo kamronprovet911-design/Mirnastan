@@ -55,7 +55,7 @@ def process_pending_reports():
             
             # Парсим описание для красивого вывода ресурсов
             desc_text = r['description'] or 'Нет описания'
-            formatted_desc = f"Назначен постоянный ресурсный доход для развития земель.\n\n{details_label}"
+            formatted_desc = "Назначен постоянный ресурсный доход для развития земель.\n\n" + details_label
             
             # Пытаемся выделить цифры из описания для красивого формата
             if 'дерево=' in desc_text or 'металл=' in desc_text or 'продовольствие=' in desc_text:
@@ -90,7 +90,7 @@ def process_pending_reports():
             header_text = 'НОВЫЙ ОТЧЁТ'
             formatted_desc = r['description'] or 'Нет описания'
 
-        # Собираем основное сообщение
+        # Собираем основное сообщение с правильными абзацами
         text = (
             f"{header_emoji} <b>{header_text}</b>\n\n"
             f"🏰 <b>Королевство:</b> {kingdom}\n"
@@ -98,10 +98,10 @@ def process_pending_reports():
         )
         
         if r['nickname']:
-            text += f"📝 <i>({r['nickname']})</i>\n"
+            text += f"\n📝 <i>({r['nickname']})</i>\n"
             
         if r['amount'] and r['amount'] not in ('', 0, None) and report_type != 'Ресурсный доход':
-            text += f"💰 <b>Сумма:</b> {r['amount']}\n"
+            text += f"\n💰 <b>Сумма:</b> {r['amount']}\n"
             
         text += f"\n📜 <b>Подробности:</b>\n{formatted_desc}"
 
