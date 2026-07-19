@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
-  <div class="col-lg-8">
+  <div class="col-lg-6">
     <div class="card p-4">
-      <h3 class="mb-3">Создать отчёт / обращение</h3>
+      <h3 class="mb-3">Подать заявку на проект</h3>
       <form method="post">
         <div class="row g-3">
           <div class="col-md-6">
@@ -15,48 +15,19 @@
             </select>
           </div>
           <div class="col-md-6">
-            <label class="form-label">Тип материала</label>
-            <select name="report_type" class="form-select">
-              <option>Финансы</option>
-              <option>Предложение</option>
-              <option>Письмо</option>
-              <option>Запрос</option>
-              <option>Другое</option>
-            </select>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Сумма (если есть)</label>
-            <input name="amount" class="form-control" placeholder="0">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Заголовок</label>
-            <input name="title" class="form-control" placeholder="Кратко о содержании">
-          </div>
-          <div class="col-md-6">
             <label class="form-label">От кого</label>
             <input name="author_name" class="form-control" value="{{ report_defaults.author_name or '' }}" placeholder="Имя или должность">
           </div>
-          <div class="col-md-6">
-            <label class="form-label">Кому</label>
-            <input name="recipient_name" class="form-control" list="recipients" value="{{ report_defaults.recipient_name or '' }}" placeholder="Император / Совет / Граф">
-            <datalist id="recipients">
-              <option value="Император"></option>
-              <option value="Совет"></option>
-              <option value="Король"></option>
-              <option value="Граф"></option>
-              <option value="Казна"></option>
-            </datalist>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Ник / псевдоним</label>
-            <input name="nickname" class="form-control" value="{{ report_defaults.nickname or '' }}" placeholder="например: Серый Лорд">
+          <div class="col-12">
+            <label class="form-label">Название проекта</label>
+            <input name="title" class="form-control" placeholder="Например: Строительство дороги" required>
           </div>
           <div class="col-12">
-            <label class="form-label">Подробности</label>
-            <textarea name="description" class="form-control" rows="6" placeholder="Опишите предложение, письмо, запрос или финансовую заявку..."></textarea>
+            <label class="form-label">Сумма проекта</label>
+            <input name="amount" type="number" class="form-control" placeholder="0" required>
           </div>
         </div>
-        <button class="btn btn-gold mt-3">Отправить в «Столица и новости»</button>
+        <button class="btn btn-gold mt-3">Отправить заявку</button>
       </form>
     </div>
   </div>

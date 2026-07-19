@@ -1,16 +1,1 @@
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-.venv
-venv/
-*.egg-info/
-dist/
-build/
-*.db
-.env
-.env.local
-*.log
-.DS_Store
+Nothing should be ignored in this case, as only a template file (`templates/submit_report.html`) was modified and no build artifacts, dependencies, or temporary files were included in the changes.

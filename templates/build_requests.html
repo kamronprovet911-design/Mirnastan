@@ -29,48 +29,13 @@
         </div>
 
         <div>
-          <label class="form-label small">Что строим</label>
-          <input name="item_name" class="form-control form-control-sm" placeholder="например: Мельница">
-        </div>
-
-        <div class="row g-2">
-          <div class="col-md-4">
-            <label class="form-label small">Дерево (стоимость)</label>
-            <input name="requested_tree_cost" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
-          </div>
-          <div class="col-md-4">
-            <label class="form-label small">Металл (стоимость)</label>
-            <input name="requested_metal_cost" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
-          </div>
-          <div class="col-md-4">
-            <label class="form-label small">Еда (стоимость)</label>
-            <input name="requested_food_cost" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
-          </div>
+          <label class="form-label small">Название проекта</label>
+          <input name="item_name" class="form-control form-control-sm" placeholder="например: Мельница" required>
         </div>
 
         <div>
-          <label class="form-label small">Оплата деньгами королевства</label>
+          <label class="form-label small">Сумма проекта (золото)</label>
           <input name="requested_kingdom_cash_cost" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
-        </div>
-
-        <div>
-          <label class="form-label small">Покрытие казной императора (доля)</label>
-          <input name="treasury_cash_covered" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
-        </div>
-
-        <div class="row g-2">
-          <div class="col-md-4">
-            <label class="form-label small">Ежедневный доход: Дерево</label>
-            <input name="proposed_tree_income" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
-          </div>
-          <div class="col-md-4">
-            <label class="form-label small">Ежедневный доход: Металл</label>
-            <input name="proposed_metal_income" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
-          </div>
-          <div class="col-md-4">
-            <label class="form-label small">Ежедневный доход: Еда</label>
-            <input name="proposed_food_income" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
-          </div>
         </div>
 
         <div>
@@ -97,10 +62,11 @@
             <div>
               <div class="fw-bold">{{ r.item_name }}</div>
               <div class="text-muted small">Графство: {{ r.county_name }} · Королевство: {{ r.kingdom_name }}</div>
-              <div class="small">Стоимость: D={{ r.requested_tree_cost }}; M={{ r.requested_metal_cost }}; P={{ r.requested_food_cost }}</div>
-              <div class="small">Деньги: королевство={{ r.kingdom_cash_cost }}; казна={{ r.treasury_cash_covered }}</div>
-              <div class="small">Предложенный доход: D+{{ r.proposed_tree_income }}; M+{{ r.proposed_metal_income }}; P+{{ r.proposed_food_income }}</div>
+              <div class="small">Сумма проекта: {{ r.requested_kingdom_cash_cost }} золотых</div>
               <div class="small text-muted">Статус: {{ r.status }}</div>
+              {% if r.status == 'approved' %}
+              <div class="small text-success">Одобрено императором</div>
+              {% endif %}
             </div>
           </div>
 
@@ -108,20 +74,57 @@
           <hr>
           <form method="post" action="/build_requests/approve" class="vstack gap-2">
             <input type="hidden" name="request_id" value="{{ r.id }}">
-            <div class="row g-2">
-              <div class="col-md-4">
-                <label class="form-label small">Доход D</label>
-                <input name="proposed_tree_income" type="number" min="0" step="0.01" value="{{ r.proposed_tree_income }}" class="form-control form-control-sm" required>
-              </div>
-              <div class="col-md-4">
-                <label class="form-label small">Доход M</label>
-                <input name="proposed_metal_income" type="number" min="0" step="0.01" value="{{ r.proposed_metal_income }}" class="form-control form-control-sm" required>
-              </div>
-              <div class="col-md-4">
-                <label class="form-label small">Доход P</label>
-                <input name="proposed_food_income" type="number" min="0" step="0.01" value="{{ r.proposed_food_income }}" class="form-control form-control-sm" required>
+            
+            <div class="mb-2">
+              <label class="form-label small">Как распределить расходы?</label>
+              <div class="row g-2">
+                <div class="col-6">
+                  <label class="form-label small">Из казны императора</label>
+                  <input name="treasury_cash_covered" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
+                </div>
+                <div class="col-6">
+                  <label class="form-label small">Из бюджета королевства</label>
+                  <input name="kingdom_cash_cost" type="number" min="0" step="0.01" value="{{ r.requested_kingdom_cash_cost }}" class="form-control form-control-sm" required>
+                </div>
               </div>
             </div>
+            
+            <div class="mb-2">
+              <label class="form-label small">Ресурсы (сколько тратит император):</label>
+              <div class="row g-2">
+                <div class="col-4">
+                  <label class="form-label small">Дерево</label>
+                  <input name="requested_tree_cost" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm">
+                </div>
+                <div class="col-4">
+                  <label class="form-label small">Металл</label>
+                  <input name="requested_metal_cost" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm">
+                </div>
+                <div class="col-4">
+                  <label class="form-label small">Продовольствие</label>
+                  <input name="requested_food_cost" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm">
+                </div>
+              </div>
+            </div>
+            
+            <div class="mb-2">
+              <label class="form-label small">Доход от постройки:</label>
+              <div class="row g-2">
+                <div class="col-4">
+                  <label class="form-label small">Доход D</label>
+                  <input name="proposed_tree_income" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
+                </div>
+                <div class="col-4">
+                  <label class="form-label small">Доход M</label>
+                  <input name="proposed_metal_income" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
+                </div>
+                <div class="col-4">
+                  <label class="form-label small">Доход P</label>
+                  <input name="proposed_food_income" type="number" min="0" step="0.01" value="0" class="form-control form-control-sm" required>
+                </div>
+              </div>
+            </div>
+            
             <input name="reason" class="form-control form-control-sm" placeholder="Причина/заметка императора">
             <button class="btn btn-outline-success">Одобрить</button>
           </form>

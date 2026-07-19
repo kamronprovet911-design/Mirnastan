@@ -1777,11 +1777,12 @@ def build_request_submit():
         db,
         request.form.get('county_id'),
         request.form.get('item_name'),
-        request.form.get('requested_tree_cost', 0),
-        request.form.get('requested_metal_cost', 0),
-        request.form.get('requested_food_cost', 0),
+        0,  # requested_tree_cost - теперь только сумма проекта
+        0,  # requested_metal_cost
+        0,  # requested_food_cost
         acting_user=user,
         reason=request.form.get('reason', ''),
+        requested_kingdom_cash_cost=request.form.get('requested_kingdom_cash_cost', 0),
     )
 
     if ok:
@@ -1801,6 +1802,12 @@ def build_request_approve():
         flash('Только император может одобрять постройки')
         return redirect(url_for('dashboard'))
     db = get_db()
+    
+    # Император вводит ресурсы, которые он тратит
+    requested_tree_cost = request.form.get('requested_tree_cost', 0)
+    requested_metal_cost = request.form.get('requested_metal_cost', 0)
+    requested_food_cost = request.form.get('requested_food_cost', 0)
+    
     ok = approve_building_request(
         db,
         request.form.get('request_id'),
@@ -1811,6 +1818,9 @@ def build_request_approve():
         request.form.get('proposed_metal_income', 0),
         request.form.get('proposed_food_income', 0),
         reason=request.form.get('reason', ''),
+        requested_tree_cost=requested_tree_cost,
+        requested_metal_cost=requested_metal_cost,
+        requested_food_cost=requested_food_cost,
     )
     if ok:
         db.commit()
