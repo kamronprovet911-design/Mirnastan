@@ -6,7 +6,7 @@
       <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
         <div>
           <h1 class="h3 mb-1">Постройки</h1>
-          <p class="mb-0 text-light">Список одобренных построек по городам.</p>
+          <p class="mb-0 text-light">Список построенных и строящихся объектов по городам.</p>
         </div>
         <a class="btn btn-outline-info" href="/dashboard">Назад</a>
       </div>
@@ -22,7 +22,9 @@
             <th>Город</th>
             <th>Королевство</th>
             <th>Постройка</th>
-            <th>Дата постройки</th>
+            <th>Статус</th>
+            <th>Дата завершения</th>
+            <th>Доход (Д/М/П)</th>
           </tr>
         </thead>
         <tbody>
@@ -31,13 +33,21 @@
             <td>{{ b.county_name }}</td>
             <td>{{ b.kingdom_name }}</td>
             <td>{{ b.item_name }}</td>
-            <td>{{ b.created_at }}</td>
+            <td>
+              {% if b.status == 'building' %}
+                <span class="text-primary">🚧 Строится</span>
+              {% else %}
+                <span class="text-success">✅ Построено</span>
+              {% endif %}
+            </td>
+            <td>{{ b.construction_finished_at or '-' }}</td>
+            <td>+{{ b.proposed_tree_income }} / +{{ b.proposed_metal_income }} / +{{ b.proposed_food_income }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
       {% else %}
-      <p class="text-muted">Пока нет одобренных построек.</p>
+      <p class="text-muted">Пока нет построек.</p>
       {% endif %}
     </div>
   </div>
