@@ -686,6 +686,7 @@ def submit_building_request(
     requested_food_cost,
     acting_user=None,
     reason='',
+    requested_kingdom_cash_cost=0,
 ):
     county = get_county(db, county_id)
     if not county:
@@ -698,8 +699,9 @@ def submit_building_request(
     requested_tree_cost = parse_resource_amount(requested_tree_cost)
     requested_metal_cost = parse_resource_amount(requested_metal_cost)
     requested_food_cost = parse_resource_amount(requested_food_cost)
+    requested_kingdom_cash_cost = parse_resource_amount(requested_kingdom_cash_cost)
 
-    if None in (requested_tree_cost, requested_metal_cost, requested_food_cost):
+    if None in (requested_tree_cost, requested_metal_cost, requested_food_cost, requested_kingdom_cash_cost):
         return False
 
     acting_user = acting_user or {}
@@ -721,12 +723,9 @@ def submit_building_request(
     if not kingdom:
         return False
 
-    # resources must exist at submit time
-    if float(kingdom['tree'] or 0) < requested_tree_cost:
-        return False
-    if float(kingdom['metal'] or 0) < requested_metal_cost:
-        return False
-    if float(kingdom['food'] or 0) < requested_food_cost:
+    # resources are set by emperor on approve, so no check needed at submit time
+    # only validate that requested_kingdom_cash_cost is a valid number
+    if requested_kingdom_cash_cost < 0:
         return False
 
     db.execute(
@@ -750,10 +749,10 @@ def submit_building_request(
             username,
             role,
             item_name,
-            requested_tree_cost,
-            requested_metal_cost,
-            requested_food_cost,
-            0,  # requested_kingdom_cash_cost (no longer submitted)
+            0,  # requested_tree_cost - will be set by emperor on approve
+            0,  # requested_metal_cost - will be set by emperor on approve
+            0,  # requested_food_cost - will be set by emperor on approve
+            requested_kingdom_cash_cost,
             0,  # treasury_cash_covered (will be set on approve)
             0,  # kingdom_cash_cost (will be set on approve)
             0,  # proposed_* income (set on approve)
@@ -771,7 +770,7 @@ def submit_building_request(
         'Постройка: заявка',
         0,
         'Заявка на постройку',
-        f'Заявлена постройка "{item_name}" на графстве {county["name"]}. Требуемые ресурсы: дерево={requested_tree_cost}, металл={requested_metal_cost}, продовольствие={requested_food_cost}. Причина: {reason or "-"}',
+        f'Заявлена постройка "{item_name}" на графстве {county["name"]}. Сумма проекта: {requested_kingdom_cash_cost}. Причина: {reason or "-"}',
         'Император' if role == 'emperor' else (username or 'Игрок'),
         'Император',
         'Казна Императора' if role == 'emperor' else (username or 'Личный баланс'),
