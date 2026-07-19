@@ -1,46 +1,29 @@
 ```
-# Database
-*.db
-
-# Environment variables
-.env
-.env.local
-*.env.*
+# Database file
+budget.db
 
 # Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-env/
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment
+.env
+.env.local
+.env.*
 venv/
 .venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
+env/
+ENV/
+
+# Logs
 *.log
-*.pot
-*.pyc
-*.pyo
-*.rej
-*~
-**/*.pyc
-**/__pycache__/
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
+# OS generated files
 .DS_Store
 Thumbs.db
 ```

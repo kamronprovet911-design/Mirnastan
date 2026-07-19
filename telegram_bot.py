@@ -51,29 +51,28 @@ def process_pending_reports():
         if report_type == 'Ресурсный доход':
             header_emoji = '📢'
             header_text = 'НОВОЕ НАЗНАЧЕНИЕ ОТ ИМПЕРАТОРА'
-            details_label = 'Утвержденные ресурсы (в неделю):'
             
-            # Парсим описание для красивого вывода ресурсов
             desc_text = r['description'] or 'Нет описания'
-            formatted_desc = "Назначен постоянный ресурсный доход для развития земель.\n\n" + details_label
+            formatted_desc = "Назначен постоянный ресурсный доход для развития земель.\n\n"
             
-            # Пытаемся выделить цифры из описания для красивого формата
-            if 'дерево=' in desc_text or 'металл=' in desc_text or 'продовольствие=' in desc_text:
-                parts = []
-                if 'дерево=' in desc_text:
-                    val = desc_text.split('дерево=')[1].split(',')[0].replace('0.0', '0').strip()
-                    parts.append(f"🌲 Дерево: <b>{val}</b>")
-                if 'металл=' in desc_text:
-                    val = desc_text.split('металл=')[1].split(',')[0].replace('0.0', '0').strip()
-                    parts.append(f"⛓️ Металл: <b>{val}</b>")
-                if 'продовольствие=' in desc_text:
-                    val = desc_text.split('продовольствие=')[1].split('.')[0].strip()
-                    parts.append(f"🍞 Продовольствие: <b>{val}</b>")
-                if parts:
-                    formatted_desc += "\n" + "\n".join(parts)
+            # Пытаемся выделить ресурсы из описания (новый формат с эмодзи)
+            if '🌲 Дерево:' in desc_text or '⛓️ Металл:' in desc_text or '🍞 Продовольствие:' in desc_text:
+                formatted_desc += "<b>Утвержденные ресурсы (в день):</b>\n"
+                if '🌲 Дерево:' in desc_text:
+                    val = desc_text.split('🌲 Дерево:')[1].split('\n')[0].strip().replace('<b>', '').replace('</b>', '')
+                    formatted_desc += f"\n🌲 Дерево: <b>{val}</b>"
+                if '⛓️ Металл:' in desc_text:
+                    val = desc_text.split('⛓️ Металл:')[1].split('\n')[0].strip().replace('<b>', '').replace('</b>', '')
+                    formatted_desc += f"\n⛓️ Металл: <b>{val}</b>"
+                if '🍞 Продовольствие:' in desc_text:
+                    val = desc_text.split('🍞 Продовольствие:')[1].split('\n')[0].strip().replace('<b>', '').replace('</b>', '')
+                    formatted_desc += f"\n🍞 Продовольствие: <b>{val}</b>"
+                if '📊 Суточная потребность в еде:' in desc_text:
+                    val = desc_text.split('📊 Суточная потребность в еде:')[1].split('\n')[0].strip()
+                    formatted_desc += f"\n\n📊 <b>Суточная потребность в еде:</b> {val}"
                 formatted_desc += "\n\n✅ <i>Указ вступил в силу.</i>"
             else:
-                formatted_desc += f"\n{desc_text}"
+                formatted_desc += desc_text
                 
         elif report_type == 'Выплата сюзереном':
             header_emoji = '💰'
@@ -84,6 +83,25 @@ def process_pending_reports():
             header_emoji = '🏗️'
             header_text = 'СТАТУС ПОСТРОЙКИ'
             formatted_desc = f"{r['description'] or 'Обновление статуса постройки'}"
+            
+        elif 'ШТРАФ' in report_type or 'нехватку еды' in report_type.lower():
+            header_emoji = '🚨'
+            header_text = 'ШТРАФ ЗА НЕХВАТКУ ЕДЫ'
+            formatted_desc = f"{r['description'] or 'Применён штраф -20% к доходу королевства'}"
+            
+        elif 'НАЛОГ' in report_type:
+            if 'оплачен' in report_type.lower():
+                header_emoji = '💰'
+                header_text = 'НАЛОГ ОПЛАЧЕН'
+            else:
+                header_emoji = '⚠️'
+                header_text = 'ДОЛГ ПО НАЛОГУ'
+            formatted_desc = f"{r['description'] or 'Информация об оплате налога'}"
+            
+        elif 'доход' in report_type.lower():
+            header_emoji = '📊'
+            header_text = 'ЕЖЕДНЕВНЫЙ ДОХОД'
+            formatted_desc = f"{r['description'] or 'Автоматическое начисление ежедневного дохода'}"
             
         else:
             header_emoji = '📌'
@@ -100,7 +118,7 @@ def process_pending_reports():
         if r['nickname']:
             text += f"\n📝 <i>({r['nickname']})</i>\n"
             
-        if r['amount'] and r['amount'] not in ('', 0, None) and report_type != 'Ресурсный доход':
+        if r['amount'] and r['amount'] not in ('', 0, None) and report_type not in ('Ресурсный доход', 'Ежедневный доход ресурсов', 'Ежедневный доход'):
             text += f"\n💰 <b>Сумма:</b> {r['amount']}\n"
             
         text += f"\n📜 <b>Подробности:</b>\n{formatted_desc}"

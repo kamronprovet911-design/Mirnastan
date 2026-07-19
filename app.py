@@ -324,6 +324,8 @@ def ensure_runtime_schema(db):
     ensure_column(db, 'kingdoms', 'tree_income', 'REAL DEFAULT 0')
     ensure_column(db, 'kingdoms', 'metal_income', 'REAL DEFAULT 0')
     ensure_column(db, 'kingdoms', 'food_income', 'REAL DEFAULT 0')
+    ensure_column(db, 'kingdoms', 'food_need', 'REAL DEFAULT 0')
+    ensure_column(db, 'users', 'tax_paid_today', 'INTEGER DEFAULT 0')
 
     # building_requests columns (for existing DBs)
     for col, defn in [
@@ -1197,12 +1199,18 @@ def get_configured_income_recipients(db):
 def apply_configured_daily_income(db, run_date, description=''):
     if get_setting_value(db, DAILY_INCOME_LAST_DATE_KEY, '') == run_date:
         return False
+    
     users, kingdoms, council = get_configured_income_recipients(db)
+    
+    # Сброс флага оплаты налога за новый день
+    db.execute("UPDATE users SET tax_paid_today = 0")
+    
     player_total = sum(float(user['daily_income'] or 0) for user in users if not role_is_authority(user['role']))
     authority_total = sum(float(user['daily_income'] or 0) for user in users if role_is_authority(user['role']))
     kingdom_total = sum(float(kingdom['daily_income'] or 0) for kingdom in kingdoms)
     council_total = sum(float(member['council_income'] or 0) for member in council)
     total = player_total + authority_total + kingdom_total + council_total
+    
     if total <= 0 or get_treasury_from_db(db) < total:
         return False
 
@@ -1216,13 +1224,62 @@ def apply_configured_daily_income(db, run_date, description=''):
         db.execute('UPDATE kingdoms SET budget = budget + ? WHERE id=?', (amount, kingdom['id']))
         db.execute('INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)', (None, kingdom['id'], amount, description or 'Ежедневный доход королевству'))
 
+    # Начисление налогов с королей (20% от их дохода)
+    emperor_id = db.execute("SELECT id FROM users WHERE role = 'emperor'").fetchone()
+    emperor_id = emperor_id['id'] if emperor_id else None
+    total_tax = 0.0
+    
+    kings = db.execute("SELECT id, username, daily_income, balance FROM users WHERE role = 'king'").fetchall()
+    for king in kings:
+        king_income = float(king['daily_income'] or 0)
+        if king_income > 0:
+            tax_amount = king_income * 0.20
+            king_balance = float(king['balance'] or 0)
+            
+            if king_balance >= tax_amount:
+                # Списываем налог сразу
+                db.execute('UPDATE users SET balance = balance - ? WHERE id=?', (tax_amount, king['id']))
+                if emperor_id:
+                    db.execute('UPDATE users SET balance = balance + ? WHERE id=?', (tax_amount, emperor_id))
+                db.execute('UPDATE users SET tax_paid_today = 1 WHERE id=?', (king['id'],))
+                total_tax += tax_amount
+                
+                insert_report(
+                    db,
+                    None,
+                    'Налог оплачен',
+                    tax_amount,
+                    f'💰 НАЛОГ: {king["username"]}',
+                    f'Король оплатил налог: {tax_amount:.2f} золота (20% от дохода {king_income:.2f})',
+                    king['username'],
+                    'Император',
+                    'Система',
+                )
+            else:
+                # Не хватает денег - помечаем как неоплаченный
+                insert_report(
+                    db,
+                    None,
+                    'Налог не оплачен',
+                    tax_amount,
+                    f'⚠️ ДОЛГ ПО НАЛОГУ: {king["username"]}',
+                    f'Недостаточно средств! Налог: {tax_amount:.2f}, Баланс: {king_balance:.2f}. Требуется оплата вручную.',
+                    king['username'],
+                    'Император',
+                    'Система',
+                )
+
+    report_detail = f'Игрокам: {player_total}; Власти: {authority_total}; Королевствам: {kingdom_total}; Совету: {council_total}'
+    if total_tax > 0:
+        report_detail += f'\n💰 Собрано налогов: {total_tax:.2f}'
+    
     insert_report(
         db,
         None,
         'Ежедневный доход',
         total,
         'Ежедневный доход',
-        f'Игрокам: {player_total}; Власти: {authority_total}; Королевствам: {kingdom_total}; Совету: {council_total} | {description or "автоматическая выплата в 00:01"}',
+        report_detail + f' | {description or "автоматическая выплата в 00:01"}',
         'Император',
         'Игроки, власть и королевства',
         'Казна Императора',
@@ -1239,29 +1296,46 @@ def apply_configured_daily_resource_income(db, run_date, description=''):
     if get_setting_value(db, DAILY_RESOURCE_INCOME_LAST_DATE_KEY, '') == run_date:
         return False
 
-    duchies = db.execute(
+    kingdoms = db.execute(
         '''SELECT
                id,
-               kingdom_id,
-               kingdom_name,
                name,
                COALESCE(tree_income,0) AS tree_income,
                COALESCE(metal_income,0) AS metal_income,
-               COALESCE(food_income,0) AS food_income
-           FROM duchies'''
+               COALESCE(food_income,0) AS food_income,
+               COALESCE(food_need,0) AS food_need,
+               COALESCE(food,0) AS food_stock
+           FROM kingdoms'''
     ).fetchall()
 
     total_tree = 0.0
     total_metal = 0.0
     total_food = 0.0
-
+    total_penalty = 0.0
     paid_any = False
-    for d in duchies:
-        tree_add = float(d['tree_income'] or 0)
-        metal_add = float(d['metal_income'] or 0)
-        food_add = float(d['food_income'] or 0)
+
+    for k in kingdoms:
+        tree_add = float(k['tree_income'] or 0)
+        metal_add = float(k['metal_income'] or 0)
+        food_add = float(k['food_income'] or 0)
+        food_need = float(k['food_need'] or 0)
+        food_stock = float(k['food_stock'] or 0)
+        
+        # Проверка штрафа за нехватку еды
+        penalty_applied = False
+        if food_need > 0 and food_stock < food_need:
+            penalty_applied = True
+            # Штраф -20% от общего дохода
+            total_income = tree_add + metal_add + food_add
+            penalty = total_income * 0.20
+            total_penalty += penalty
+            tree_add = tree_add * 0.80
+            metal_add = metal_add * 0.80
+            food_add = food_add * 0.80
+        
         if tree_add <= 0 and metal_add <= 0 and food_add <= 0:
-            continue
+            if not penalty_applied:
+                continue
 
         paid_any = True
         total_tree += tree_add
@@ -1269,23 +1343,34 @@ def apply_configured_daily_resource_income(db, run_date, description=''):
         total_food += food_add
 
         db.execute(
-            '''UPDATE duchies
+            '''UPDATE kingdoms
                SET tree = COALESCE(tree,0) + ?,
                    metal = COALESCE(metal,0) + ?,
                    food = COALESCE(food,0) + ?
                WHERE id=?''',
-            (tree_add, metal_add, food_add, d['id']),
+            (tree_add, metal_add, food_add, k['id']),
         )
 
-        # для совместимости используем transactions.to_kingdom = kingdom_id
-        db.execute(
-            'INSERT INTO transactions (from_user, to_kingdom, amount, description) VALUES (?,?,?,?)',
-            (None, d['kingdom_id'], tree_add + metal_add + food_add, description or 'Ежедневный доход ресурсам'),
-        )
+        if penalty_applied:
+            insert_report(
+                db,
+                None,
+                'Штраф за нехватку еды',
+                0,
+                f'🚨 ШТРАФ: {k["name"]}',
+                f'Нехватка продовольствия! Потребность: {food_need}, Есть: {food_stock}.\nПрименён штраф -20% к доходу.',
+                'Император',
+                k['name'],
+                'Система',
+            )
 
     if not paid_any:
         set_setting(db, DAILY_RESOURCE_INCOME_LAST_DATE_KEY, run_date)
         return False
+
+    report_detail = f'Дерево: {total_tree}; Металл: {total_metal}; Продовольствие: {total_food}'
+    if total_penalty > 0:
+        report_detail += f'\n⚠️ Общий штраф за нехватку еды: {total_penalty}'
 
     insert_report(
         db,
@@ -1293,9 +1378,9 @@ def apply_configured_daily_resource_income(db, run_date, description=''):
         'Ежедневный доход ресурсов',
         0,
         'Ежедневный доход ресурсов',
-        f'Дерево: {total_tree}; Металл: {total_metal}; Продовольствие: {total_food} | {description or "автоматическая выдача"}',
+        report_detail + f' | {description or "автоматическая выдача"}',
         'Император',
-        'Герцогства',
+        'Королевства',
         'Казна Императора',
     )
     set_setting(db, DAILY_RESOURCE_INCOME_LAST_DATE_KEY, run_date)
@@ -2105,7 +2190,7 @@ def resource_income_page():
 
     db = get_db()
     if request.method == 'POST':
-        # form fields: kingdom_id, tree_income, metal_income, food_income
+        # form fields: kingdom_id, tree_income, metal_income, food_income, food_need
         kingdom_id_raw = request.form.get('kingdom_id', '')
         if not kingdom_id_raw or not kingdom_id_raw.strip():
             flash('Неверные данные: не выбрано королевство')
@@ -2120,9 +2205,10 @@ def resource_income_page():
         tree_income = parse_resource_amount(request.form.get('tree_income', '0'))
         metal_income = parse_resource_amount(request.form.get('metal_income', '0'))
         food_income = parse_resource_amount(request.form.get('food_income', '0'))
+        food_need = parse_resource_amount(request.form.get('food_need', '0'))
         
-        if tree_income is None or metal_income is None or food_income is None:
-            flash('Неверные данные: проверьте значения ресурсов')
+        if tree_income is None or metal_income is None or food_income is None or food_need is None:
+            flash('Неверные данные: проверьте значения ресурсов и потребности в еде')
             return redirect(url_for('resource_income_page'))
 
         kingdom = db.execute('SELECT id FROM kingdoms WHERE id=?', (kingdom_id,)).fetchone()
@@ -2130,7 +2216,8 @@ def resource_income_page():
             flash('Неизвестное королевство')
             return redirect(url_for('resource_income_page'))
 
-        db.execute('UPDATE kingdoms SET tree_income=?, metal_income=?, food_income=? WHERE id=?', (tree_income, metal_income, food_income, kingdom_id))
+        db.execute('UPDATE kingdoms SET tree_income=?, metal_income=?, food_income=?, food_need=? WHERE id=?', 
+                   (tree_income, metal_income, food_income, food_need, kingdom_id))
 
         insert_report(
             db,
@@ -2138,17 +2225,17 @@ def resource_income_page():
             'Ресурсный доход',
             0,
             'Назначение ресурсного дохода',
-            f'Император назначил доход: дерево={tree_income}, металл={metal_income}, продовольствие={food_income}.',
+            f'Император назначил доход:\n🌲 Дерево: {tree_income}\n⛓️ Металл: {metal_income}\n🍞 Продовольствие: {food_income}\n\n📊 Суточная потребность в еде: {food_need}',
             'Император',
             db.execute('SELECT name FROM kingdoms WHERE id=?', (kingdom_id,)).fetchone()[0],
             'Казна Императора',
         )
         db.commit()
         send_report_to_telegram()
-        flash('Ресурсный доход обновлён')
+        flash('Ресурсный доход и норма еды обновлены')
         return redirect(url_for('resource_income_page'))
 
-    kingdoms = query_db('SELECT id, name, tree_income, metal_income, food_income FROM kingdoms ORDER BY name')
+    kingdoms = query_db('SELECT id, name, tree_income, metal_income, food_income, food_need FROM kingdoms ORDER BY name')
     return render_template('resource_income.html', kingdoms=kingdoms, treasury=get_treasury())
 
 
