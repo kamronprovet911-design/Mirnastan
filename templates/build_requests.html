@@ -6,7 +6,7 @@
       <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
         <div>
           <h1 class="h3 mb-1">Заявки на постройки</h1>
-          <p class="mb-0 text-light">Граф/король подают запрос, император одобряет.</p>
+          <p class="mb-0 text-light">Граф/король подают запрос, император одобряет, затем заявитель подтверждает и начинается строительство (1 час).</p>
         </div>
         <a class="btn btn-outline-info" href="/dashboard">Назад</a>
       </div>
@@ -63,9 +63,23 @@
               <div class="fw-bold">{{ r.item_name }}</div>
               <div class="text-muted small">Графство: {{ r.county_name }} · Королевство: {{ r.kingdom_name }}</div>
               <div class="small">Сумма проекта: {{ r.requested_kingdom_cash_cost }} золотых</div>
-              <div class="small text-muted">Статус: {{ r.status }}</div>
-              {% if r.status == 'approved' %}
-              <div class="small text-success">Одобрено императором</div>
+              <div class="small text-muted">Статус: 
+                {% if r.status == 'submitted' %}
+                  <span class="text-warning">На рассмотрении</span>
+                {% elif r.status == 'emperor_approved' %}
+                  <span class="text-info">Одобрено императором (ждёт подтверждения)</span>
+                {% elif r.status == 'building' %}
+                  <span class="text-primary">Строится (до {{ r.construction_finished_at }})</span>
+                {% elif r.status == 'active' %}
+                  <span class="text-success">Построено</span>
+                {% elif r.status == 'rejected' %}
+                  <span class="text-danger">Отклонено</span>
+                {% else %}
+                  {{ r.status }}
+                {% endif %}
+              </div>
+              {% if r.reason %}
+              <div class="small text-muted">Примечание: {{ r.reason }}</div>
               {% endif %}
             </div>
           </div>
@@ -133,6 +147,17 @@
             <input type="hidden" name="request_id" value="{{ r.id }}">
             <input name="reason" class="form-control form-control-sm" placeholder="Причина отказа">
             <button class="btn btn-outline-danger">Отклонить</button>
+          </form>
+          {% endif %}
+          
+          {% if r.status == 'emperor_approved' and r.requested_by_username == session.get('user', {}).get('username') %}
+          <hr>
+          <div class="alert alert-info small">
+            Император одобрил эту постройку. Подтвердите, чтобы начать строительство.
+          </div>
+          <form method="post" action="/build_requests/confirm" class="vstack gap-2">
+            <input type="hidden" name="request_id" value="{{ r.id }}">
+            <button class="btn btn-outline-primary">Подтвердить и начать строительство</button>
           </form>
           {% endif %}
         </div>
