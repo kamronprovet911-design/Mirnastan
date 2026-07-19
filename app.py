@@ -2294,10 +2294,81 @@ def builds_page():
     return render_template('builds.html', builds=builds)
 
 
-@app.route('/cards/exchange/<int:card_id>', methods=['POST'])
+@app.route('/taxes')
 @login_required
-def cards_exchange(card_id):
-    return ('Not Found', 404)
+def taxes_page():
+    user = session['user']
+    if user.get('role') != 'king':
+        flash('Только короли могут платить налоги')
+        return redirect(url_for('dashboard'))
+    
+    db = get_db()
+    king = db.execute('SELECT * FROM users WHERE id=?', (user['id'],)).fetchone()
+    
+    # Calculate tax debt (20% of daily income)
+    daily_income = float(king['daily_income'] or 0)
+    tax_amount = daily_income * 0.20
+    current_balance = float(king['balance'] or 0)
+    tax_paid_today = bool(king['tax_paid_today'])
+    
+    # Check if already paid today
+    already_paid = tax_paid_today
+    
+    return render_template('taxes.html', 
+                          king=king,
+                          tax_amount=tax_amount,
+                          current_balance=current_balance,
+                          already_paid=already_paid)
+
+
+@app.route('/taxes/pay', methods=['POST'])
+@login_required
+def pay_taxes():
+    user = session['user']
+    if user.get('role') != 'king':
+        flash('Только короли могут платить налоги')
+        return redirect(url_for('dashboard'))
+    
+    db = get_db()
+    king = db.execute('SELECT * FROM users WHERE id=?', (user['id'],)).fetchone()
+    
+    daily_income = float(king['daily_income'] or 0)
+    tax_amount = daily_income * 0.20
+    current_balance = float(king['balance'] or 0)
+    
+    if current_balance < tax_amount:
+        flash(f'Недостаточно средств! Налог: {tax_amount:.2f}, Баланс: {current_balance:.2f}')
+        return redirect(url_for('taxes_page'))
+    
+    # Deduct tax from king
+    db.execute('UPDATE users SET balance = balance - ? WHERE id=?', (tax_amount, king['id']))
+    
+    # Add to emperor
+    emperor = db.execute("SELECT id FROM users WHERE role = 'emperor'").fetchone()
+    if emperor:
+        db.execute('UPDATE users SET balance = balance + ? WHERE id=?', (tax_amount, emperor['id']))
+    
+    # Mark as paid
+    db.execute('UPDATE users SET tax_paid_today = 1 WHERE id=?', (king['id'],))
+    db.commit()
+    
+    # Send report
+    insert_report(
+        db,
+        None,
+        'Налог оплачен',
+        tax_amount,
+        f'💰 НАЛОГ: {king["username"]}',
+        f'Король оплатил налог вручную: {tax_amount:.2f} золота (20% от дохода {daily_income:.2f})',
+        king['username'],
+        'Император',
+        'Система',
+    )
+    db.commit()
+    send_report_to_telegram()
+    
+    flash('Налог успешно оплачен!')
+    return redirect(url_for('taxes_page'))
 
 
 if __name__ == '__main__':
