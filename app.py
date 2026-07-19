@@ -21,8 +21,8 @@ APP_TIMEZONE = os.getenv('APP_TIMEZONE') or os.getenv('TZ')
 DAILY_INCOME_HOUR = 0
 DAILY_INCOME_MINUTE = 1
 DAILY_INCOME_LAST_DATE_KEY = 'daily_income_last_date'
-AUTHORITY_ROLES = ('king', 'graf')
-DEFAULT_TREASURY = 10000000000.0
+AUTHORITY_ROLES = ('emperor',)
+DEFAULT_TREASURY = 5000000000.0
 MAP_UPLOAD_FOLDER = os.path.join(app.static_folder, 'maps')
 ALLOWED_MAP_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
 
@@ -713,7 +713,7 @@ def submit_building_request(
         if role == 'graf':
             if float(county['graf_user_id'] or 0) == 0:
                 return False
-            if county['graf_user_id'] != acting_user.get('id') and username != county.get('graf_username'):
+            if county['graf_user_id'] != acting_user.get('id') and username != (county.get('graf_username') if hasattr(county, 'get') else None):
                 return False
         else:
             if role != 'king' or not user_can_manage_county(acting_user, county):
@@ -789,6 +789,9 @@ def approve_building_request(
     proposed_metal_income,
     proposed_food_income,
     reason='',
+    requested_tree_cost=0,
+    requested_metal_cost=0,
+    requested_food_cost=0,
 ):
     req = db.execute('SELECT * FROM building_requests WHERE id=?', (request_id,)).fetchone()
     if not req:
@@ -801,6 +804,13 @@ def approve_building_request(
     if treasury_cash_covered is None or kingdom_cash_cost is None:
         return False
     if treasury_cash_covered < 0 or kingdom_cash_cost < 0:
+        return False
+
+    # Parse resource costs set by emperor
+    requested_tree_cost = parse_resource_amount(requested_tree_cost)
+    requested_metal_cost = parse_resource_amount(requested_metal_cost)
+    requested_food_cost = parse_resource_amount(requested_food_cost)
+    if None in (requested_tree_cost, requested_metal_cost, requested_food_cost):
         return False
 
     kingdom = db.execute('SELECT * FROM kingdoms WHERE id=?', (req['kingdom_id'],)).fetchone()
@@ -817,11 +827,11 @@ def approve_building_request(
         return False
 
     # re-validate resource availability (resources are always taken from kingdom pool)
-    if float(kingdom['tree'] or 0) < float(req['requested_tree_cost'] or 0):
+    if float(kingdom['tree'] or 0) < requested_tree_cost:
         return False
-    if float(kingdom['metal'] or 0) < float(req['requested_metal_cost'] or 0):
+    if float(kingdom['metal'] or 0) < requested_metal_cost:
         return False
-    if float(kingdom['food'] or 0) < float(req['requested_food_cost'] or 0):
+    if float(kingdom['food'] or 0) < requested_food_cost:
         return False
 
     proposed_tree_income = parse_resource_amount(proposed_tree_income)
@@ -865,10 +875,16 @@ def approve_building_request(
     # persist final costs into request (for transparency)
     db.execute(
         '''UPDATE building_requests
-           SET treasury_cash_covered=?,
-               kingdom_cash_cost=?
+           SET requested_tree_cost=?,
+               requested_metal_cost=?,
+               requested_food_cost=?,
+               treasury_cash_covered=?,
+               kingdom_cash_cost=?,
+               proposed_tree_income=?,
+               proposed_metal_income=?,
+               proposed_food_income=?
            WHERE id=?''',
-        (treasury_cover, kingdom_cost, request_id),
+        (requested_tree_cost, requested_metal_cost, requested_food_cost, treasury_cover, kingdom_cost, proposed_tree_income, proposed_metal_income, proposed_food_income, request_id),
     )
 
     # apply money coverage
@@ -876,9 +892,9 @@ def approve_building_request(
     db.execute('UPDATE kingdoms SET budget = budget - ? WHERE id=?', (kingdom_cost, req['kingdom_id']))
 
     # resources disappear (spent from kingdoms pool as per current rules)
-    db.execute('UPDATE kingdoms SET tree = tree - ? WHERE id=?', (float(req['requested_tree_cost'] or 0), req['kingdom_id']))
-    db.execute('UPDATE kingdoms SET metal = metal - ? WHERE id=?', (float(req['requested_metal_cost'] or 0), req['kingdom_id']))
-    db.execute('UPDATE kingdoms SET food = food - ? WHERE id=?', (float(req['requested_food_cost'] or 0), req['kingdom_id']))
+    db.execute('UPDATE kingdoms SET tree = tree - ? WHERE id=?', (requested_tree_cost, req['kingdom_id']))
+    db.execute('UPDATE kingdoms SET metal = metal - ? WHERE id=?', (requested_metal_cost, req['kingdom_id']))
+    db.execute('UPDATE kingdoms SET food = food - ? WHERE id=?', (requested_food_cost, req['kingdom_id']))
 
     # income increases after approval (split into duchies/kingdom by requester role)
     if duchy_share > 0 and duchy_id:
@@ -908,7 +924,7 @@ def approve_building_request(
         'Постройка: одобрено',
         kingdom_cost + treasury_cover,
         'Одобрение постройки',
-        f'Император одобрил постройку "{req["item_name"]}" на графстве {req["county_name"]}. Списано: деньги королевства={kingdom_cost}, казна={treasury_cover}; ресурсы: дерево={req["requested_tree_cost"]}, металл={req["requested_metal_cost"]}, еда={req["requested_food_cost"]}. Доход от постройки распределён: дерево+{proposed_tree_income}, металл+{proposed_metal_income}, еда+{proposed_food_income}. (граф: 80% в герцогство и 20% в королевство; король: 100% в королевство) Причина: {reason or "-"}',
+        f'Император одобрил постройку "{req["item_name"]}" на графстве {req["county_name"]}. Списано: деньги королевства={kingdom_cost}, казна={treasury_cover}; ресурсы: дерево={requested_tree_cost}, металл={requested_metal_cost}, еда={requested_food_cost}. Доход от постройки распределён: дерево+{proposed_tree_income}, металл+{proposed_metal_income}, еда+{proposed_food_income}. (граф: 80% в герцогство и 20% в королевство; король: 100% в королевство) Причина: {reason or "-"}',
         'Император',
         'Император',
         'Казна Императора',
@@ -916,6 +932,43 @@ def approve_building_request(
 
     return True
 
+
+def reject_building_request(
+    db,
+    request_id,
+    emperor_username,
+    reason='',
+):
+    req = db.execute('SELECT * FROM building_requests WHERE id=?', (request_id,)).fetchone()
+    if not req:
+        return False
+    if req['status'] != 'submitted':
+        return False
+
+    db.execute(
+        '''UPDATE building_requests
+           SET status='rejected',
+               approved_by_user_id=NULL,
+               approved_by_username=?,
+               approved_at=CURRENT_TIMESTAMP,
+               reason=?
+           WHERE id=?''',
+        (emperor_username, reason or '', request_id),
+    )
+
+    insert_report(
+        db,
+        None,
+        'Постройка: отклонено',
+        0,
+        'Отклонение постройки',
+        f'Император отклонил постройку "{req["item_name"]}" на графстве {req["county_name"]}. Причина: {reason or "-"}',
+        'Император',
+        'Император',
+        'Казна Императора',
+    )
+
+    return True
 
 
 def apply_people_expense(db, amount, description='', acting_user=None):
@@ -1830,6 +1883,30 @@ def build_request_approve():
     return redirect(url_for('dashboard'))
 
 
+@app.route('/build_requests/reject', methods=['POST'])
+@login_required
+def build_request_reject():
+    user = session['user']
+    if user.get('role') != 'emperor':
+        flash('Только император может отклонять постройки')
+        return redirect(url_for('dashboard'))
+    db = get_db()
+    
+    ok = reject_building_request(
+        db,
+        request.form.get('request_id'),
+        user.get('username'),
+        reason=request.form.get('reason', ''),
+    )
+    if ok:
+        db.commit()
+        send_report_to_telegram()
+        flash('Заявка отклонена')
+    else:
+        flash('Не удалось отклонить заявку')
+    return redirect(url_for('build_requests_page'))
+
+
 @app.route('/passwords')
 @login_required
 def passwords_page():
@@ -2006,6 +2083,23 @@ def build_requests_page():
         my_counties=my_counties,
         building_requests=building_requests,
     )
+
+
+@app.route('/builds')
+@login_required
+def builds_page():
+    db = get_db()
+    # Show only approved buildings with city and building name
+    builds = db.execute(
+        """SELECT county_name, item_name, kingdom_name, created_at, 
+                  requested_tree_cost, requested_metal_cost, requested_food_cost,
+                  treasury_cash_covered, kingdom_cash_cost,
+                  proposed_tree_income, proposed_metal_income, proposed_food_income
+           FROM building_requests 
+           WHERE status='approved' 
+           ORDER BY created_at DESC"""
+    ).fetchall()
+    return render_template('builds.html', builds=builds)
 
 
 @app.route('/cards/exchange/<int:card_id>', methods=['POST'])
