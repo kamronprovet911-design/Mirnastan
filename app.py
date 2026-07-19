@@ -2103,12 +2103,23 @@ def resource_income_page():
     db = get_db()
     if request.method == 'POST':
         # form fields: kingdom_id, tree_income, metal_income, food_income
-        kingdom_id = request.form.get('kingdom_id')
-        tree_income = parse_resource_amount(request.form.get('tree_income', 0))
-        metal_income = parse_resource_amount(request.form.get('metal_income', 0))
-        food_income = parse_resource_amount(request.form.get('food_income', 0))
-        if kingdom_id is None or tree_income is None or metal_income is None or food_income is None:
-            flash('Неверные данные')
+        kingdom_id_raw = request.form.get('kingdom_id', '')
+        if not kingdom_id_raw or not kingdom_id_raw.strip():
+            flash('Неверные данные: не выбрано королевство')
+            return redirect(url_for('resource_income_page'))
+        
+        try:
+            kingdom_id = int(kingdom_id_raw)
+        except (ValueError, TypeError):
+            flash('Неверные данные: неверный ID королевства')
+            return redirect(url_for('resource_income_page'))
+        
+        tree_income = parse_resource_amount(request.form.get('tree_income', '0'))
+        metal_income = parse_resource_amount(request.form.get('metal_income', '0'))
+        food_income = parse_resource_amount(request.form.get('food_income', '0'))
+        
+        if tree_income is None or metal_income is None or food_income is None:
+            flash('Неверные данные: проверьте значения ресурсов')
             return redirect(url_for('resource_income_page'))
 
         kingdom = db.execute('SELECT id FROM kingdoms WHERE id=?', (kingdom_id,)).fetchone()
