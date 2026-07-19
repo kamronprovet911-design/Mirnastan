@@ -2361,21 +2361,6 @@ def pay_taxes():
     db.execute('UPDATE users SET tax_paid_today = 1 WHERE id=?', (king['id'],))
     db.commit()
     
-    # Send report - fixed parameter order
-    insert_report(
-        db,
-        None,  # kingdom_id
-        'tax_paid',  # report_type
-        tax_amount,  # amount
-        f'💰 НАЛОГ: {king["username"]}',  # title
-        f'Король оплатил налог вручную: {tax_amount:.2f} золота (20% от дохода {daily_income:.2f})',  # description
-        king['username'],  # author_name
-        'Император',  # recipient_name
-        'Система',  # nickname
-    )
-    db.commit()
-    send_report_to_telegram()
-    
     flash('Налог успешно оплачен!')
     return redirect(url_for('taxes_page'))
 
